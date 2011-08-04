@@ -163,6 +163,10 @@ if HAVE_ST_XVMC
 SUBDIRS += state_trackers/xvmc targets/xvmc
 endif
 
+if HAVE_ST_NINE
+SUBDIRS += state_trackers/nine targets/d3dadapter9
+endif
+
 ##
 ## Gallium tests
 ##
