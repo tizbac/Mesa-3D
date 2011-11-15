@@ -935,6 +935,7 @@ public:
 
    inline LValue *getLValue(int id);
 
+   void buildLiveSets();
    void buildDefSets();
    bool convertToSSA();
 
