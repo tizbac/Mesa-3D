@@ -613,6 +613,7 @@ public:
    bool setPredicate(CondCode ccode, Value *);
    inline Value *getPredicate() const;
    bool writesPredicate() const;
+   inline bool isPredicated() const { return predSrc >= 0; }
 
    inline void setFlagsSrc(int s, Value *);
    inline void setFlagsDef(int d, Value *);

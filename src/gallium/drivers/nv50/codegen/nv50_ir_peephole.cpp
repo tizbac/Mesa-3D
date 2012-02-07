@@ -2008,6 +2008,8 @@ GlobalCSE::visit(BasicBlock *bb)
    Instruction *phi, *next, *ik;
    int s;
 
+   // TODO: maybe do this with OP_UNION, too
+
    for (phi = bb->getPhi(); phi && phi->op == OP_PHI; phi = next) {
       next = phi->next;
       if (phi->getSrc(0)->refCount() > 1)
@@ -2039,8 +2041,14 @@ bool
 LocalCSE::tryReplace(Instruction **ptr, Instruction *i)
 {
    Instruction *old = *ptr;
+
+   // TODO: maybe relax this later (causes trouble with OP_UNION)
+   if (i->isPredicated())
+      return false;
+
    if (!old->isResultEqual(i))
       return false;
+
    for (int d = 0; old->defExists(d); ++d)
       old->def(d).replace(i->getDef(d), false);
    delete_Instruction(prog, old);
@@ -2240,6 +2248,7 @@ Program::optimizeSSA(int level)
    RUN_PASS(2, MemoryOpt, run);
    RUN_PASS(2, LocalCSE, run);
    RUN_PASS(0, DeadCodeElim, buryAll);
+
    return true;
 }
 
