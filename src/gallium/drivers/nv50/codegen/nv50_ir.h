@@ -450,7 +450,7 @@ class Value
 public:
    Value();
 
-   virtual Value *clone(Function *) const { return NULL; }
+   virtual Value *clone(ClonePolicy<Function>&) const = 0;
 
    virtual int print(char *, size_t, DataType ty = TYPE_NONE) const = 0;
 
@@ -497,7 +497,7 @@ public:
    LValue(Function *, DataFile file);
    LValue(Function *, LValue *);
 
-   virtual Value *clone(Function *) const;
+   virtual LValue *clone(ClonePolicy<Function>&) const;
 
    virtual int print(char *, size_t, DataType ty = TYPE_NONE) const;
 
@@ -512,7 +512,7 @@ class Symbol : public Value
 public:
    Symbol(Program *, DataFile file = FILE_MEMORY_CONST, ubyte fileIdx = 0);
 
-   virtual Value *clone(Function *) const;
+   virtual Symbol *clone(ClonePolicy<Function>&) const;
 
    virtual bool equals(const Value *that, bool strict) const;
 
@@ -574,7 +574,8 @@ public:
    Instruction(Function *, operation, DataType);
    virtual ~Instruction();
 
-   virtual Instruction *clone(bool deep) const;
+   virtual Instruction *clone(ClonePolicy<Function>&,
+                              Instruction * = NULL) const;
 
    void setDef(int i, Value *);
    void setSrc(int s, Value *);
@@ -692,8 +693,6 @@ public:
 
 private:
    void init();
-protected:
-   void cloneBase(Instruction *clone, bool deep) const;
 };
 
 enum TexQuery
@@ -751,7 +750,8 @@ public:
    TexInstruction(Function *, operation);
    virtual ~TexInstruction();
 
-   virtual Instruction *clone(bool deep) const;
+   virtual TexInstruction *clone(ClonePolicy<Function>&,
+                                 Instruction * = NULL) const;
 
    inline void setTexture(Target targ, uint8_t r, uint8_t s)
    {
@@ -794,7 +794,8 @@ class CmpInstruction : public Instruction
 public:
    CmpInstruction(Function *, operation);
 
-   virtual Instruction *clone(bool deep) const;
+   virtual CmpInstruction *clone(ClonePolicy<Function>&,
+                                 Instruction * = NULL) const;
 
    void setCondition(CondCode cond) { setCond = cond; }
    CondCode getCondition() const { return setCond; }
