@@ -913,7 +913,7 @@ private:
 class Function
 {
 public:
-   Function(Program *, const char *name);
+   Function(Program *, const char *name, uint32_t label);
    ~Function();
 
    static inline Function *get(Graph::Node *node);
@@ -921,6 +921,7 @@ public:
    inline Program *getProgram() const { return prog; }
    inline const char *getName() const { return name; }
    inline int getId() const { return id; }
+   inline uint32_t getLabel() const { return label; }
 
    void print();
    void printLiveIntervals() const;
@@ -965,6 +966,7 @@ private:
    void buildDefSetsPreSSA(BasicBlock *bb, const int seq);
 
 private:
+   uint32_t label;
    int id;
    const char *const name;
    Program *prog;
@@ -1012,6 +1014,8 @@ public:
    const Target *getTarget() const { return target; }
 
 private:
+   void emitSymbolTable(struct nv50_ir_prog_info *);
+
    Type progType;
    Target *target;
 
