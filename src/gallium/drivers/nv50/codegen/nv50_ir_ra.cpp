@@ -23,7 +23,8 @@
 #include "nv50_ir.h"
 #include "nv50_ir_target.h"
 
-#include "nv50/nv50_debug.h"
+#include <stack>
+#include <limits>
 
 namespace nv50_ir {
 
@@ -36,37 +37,65 @@ public:
    RegisterSet(const Target *);
 
    void init(const Target *);
-   void reset(); // reset allocation status, but not max assigned regs
+   void reset(DataFile, bool resetMax = false);
 
    void periodicMask(DataFile f, uint32_t lock, uint32_t unlock);
    void intersect(DataFile f, const RegisterSet *);
 
-   bool assign(Value **, int nr);
-   void release(const Value *);
+   bool assign(DataFile f, unsigned int size, int32_t& reg);
+   void release(DataFile f, int32_t reg, unsigned int size);
+   bool occupy(DataFile f, int32_t reg, unsigned int size);
    bool occupy(const Value *);
+   void occupyMask(DataFile f, int32_t reg, uint8_t mask);
 
-   int getMaxAssigned(DataFile f) const { return fill[f]; }
+   inline int getMaxAssigned(DataFile f) const { return fill[f]; }
+
+   inline unsigned int getFileSize(DataFile f) const { return last[f] + 1; }
+
+   inline unsigned int units(DataFile f, uint8_t size) const
+   {
+      return size >> unit[f];
+   }
+   inline unsigned int rbyte(DataFile f, uint8_t units) const
+   {
+      return units << unit[f];
+   }
+   // for regs of size >= 4, id is counted in 4-byte words (like nv50/c0 binary)
+   inline unsigned int sizeToId(DataFile f, uint8_t size) const
+   {
+      if (size < 4)
+         return units(f, size);
+      return size / 4;
+   }
+   inline unsigned int idToUnits(DataFile f, uint8_t size, int id) const
+   {
+      return units(f, id * MIN2(size, 4));
+   }
 
    void print() const;
 
 private:
-   uint32_t bits[FILE_ADDRESS + 1][(MAX_REGISTER_FILE_SIZE + 31) / 32];
+   BitSet bits[LAST_REGISTER_FILE + 1];
 
-   int unit[FILE_ADDRESS + 1]; // log2 of allocation granularity
+   int unit[LAST_REGISTER_FILE + 1]; // log2 of allocation granularity
 
-   int last[FILE_ADDRESS + 1];
-   int fill[FILE_ADDRESS + 1];
+   int last[LAST_REGISTER_FILE + 1];
+   int fill[LAST_REGISTER_FILE + 1];
 };
 
 void
-RegisterSet::reset()
+RegisterSet::reset(DataFile f, bool resetMax)
 {
-   memset(bits, 0, sizeof(bits));
+   bits[f].fill(0);
+   if (resetMax)
+      fill[f] = -1;
 }
 
 RegisterSet::RegisterSet()
 {
-   reset();
+   memset(unit, 0, sizeof(unit));
+   memset(last, 0, sizeof(last));
+   memset(fill, 0, sizeof(fill));
 }
 
 void
@@ -78,117 +107,83 @@ RegisterSet::init(const Target *targ)
       unit[rf] = targ->getFileUnit(f);
       fill[rf] = -1;
       assert(last[rf] < MAX_REGISTER_FILE_SIZE);
+      bits[rf].allocate(last[rf] + 1, true);
    }
 }
 
 RegisterSet::RegisterSet(const Target *targ)
 {
-   reset();
    init(targ);
+   for (unsigned int i = 0; i <= LAST_REGISTER_FILE; ++i)
+      reset(static_cast<DataFile>(i));
 }
 
 void
 RegisterSet::periodicMask(DataFile f, uint32_t lock, uint32_t unlock)
 {
-   for (int i = 0; i < (last[f] + 31) / 32; ++i)
-      bits[f][i] = (bits[f][i] | lock) & ~unlock;
+   bits[f].periodicMask32(lock, unlock);
 }
 
 void
 RegisterSet::intersect(DataFile f, const RegisterSet *set)
 {
-   for (int i = 0; i < (last[f] + 31) / 32; ++i)
-      bits[f][i] |= set->bits[f][i];
+   bits[f] |= set->bits[f];
 }
 
 void
 RegisterSet::print() const
 {
    INFO("GPR:");
-   for (int i = 0; i < (last[FILE_GPR] + 31) / 32; ++i)
-      INFO(" %08x", bits[FILE_GPR][i]);
+   bits[FILE_GPR].print();
    INFO("\n");
 }
 
 bool
-RegisterSet::assign(Value **def, int nr)
+RegisterSet::assign(DataFile f, unsigned int size, int32_t& reg)
 {
-   DataFile f = def[0]->reg.file;
-   int n = nr;
-   if (n == 3)
-      n = 4;
-   int s = (n * def[0]->reg.size) >> unit[f];
-   uint32_t m = (1 << s) - 1;
-
-   int id = last[f] + 1;
-   int i;
-
-   for (i = 0; (i * 32) < last[f]; ++i) {
-      if (bits[f][i] == 0xffffffff)
-         continue;
-
-      for (id = 0; id < 32; id += s)
-         if (!(bits[f][i] & (m << id)))
-            break;
-      if (id < 32)
-         break;
-   }
-   id += i * 32;
-   if (id > last[f])
+   reg = bits[f].findFreeRange(size);
+   if (reg < 0)
       return false;
-
-   bits[f][id / 32] |= m << (id % 32);
-
-   if (id + (s - 1) > fill[f])
-      fill[f] = id + (s - 1);
-
-   for (i = 0; i < nr; ++i, ++id)
-      if (!def[i]->livei.isEmpty()) // XXX: really increased id if empty ?
-         def[i]->reg.data.id = id;
+   fill[f] = MAX2(fill[f], (int32_t)(reg + size - 1));
    return true;
 }
 
 bool
-RegisterSet::occupy(const Value *val)
+RegisterSet::occupy(const Value *v)
 {
-   int id = val->reg.data.id;
-   unsigned int f = val->reg.file;
+   return occupy(v->reg.file, v->reg.data.id, v->reg.size >> unit[v->reg.file]);
+}
 
-   uint32_t m = (1 << (val->reg.size >> unit[f])) - 1;
+void
+RegisterSet::occupyMask(DataFile f, int32_t reg, uint8_t mask)
+{
+   bits[f].setMask(reg & ~31, static_cast<uint32_t>(mask) << (reg % 32));
+}
 
-   if (id < 0 || bits[f][id / 32] & m << (id % 32))
+bool
+RegisterSet::occupy(DataFile f, int32_t reg, unsigned int size)
+{
+   if (bits[f].testRange(reg, size))
       return false;
 
-   INFO_DBG(0, REG_ALLOC, "reg occupy: %u[%i] %x\n", f, id, m);
+   bits[f].setRange(reg, size);
 
-   bits[f][id / 32] |= m << (id % 32);
+   INFO_DBG(0, REG_ALLOC, "reg occupy: %u[%i] %u\n", f, reg, size);
 
-   if (fill[f] < id)
-      fill[f] = id;
+   reg = reg + size - 1;
+   if (fill[f] < reg)
+      fill[f] = reg;
 
    return true;
 }
 
 void
-RegisterSet::release(const Value *val)
+RegisterSet::release(DataFile f, int32_t reg, unsigned int size)
 {
-   int id = val->reg.data.id;
-   if (id < 0)
-      return;
-   unsigned int f = val->reg.file;
+   bits[f].clrRange(reg, size);
 
-   uint32_t m = (1 << (val->reg.size >> unit[f])) - 1;
-
-   INFO_DBG(0, REG_ALLOC, "reg release: %u[%i] %x\n", f, id, m);
-
-   bits[f][id / 32] &= ~(m << (id % 32));
+   INFO_DBG(0, REG_ALLOC, "reg release: %u[%i] %u\n", f, reg, size);
 }
-
-#define JOIN_MASK_PHI        (1 << 0)
-#define JOIN_MASK_UNION      (1 << 1)
-#define JOIN_MASK_MOV        (1 << 2)
-#define JOIN_MASK_TEX        (1 << 3)
-#define JOIN_MASK_CONSTRAINT (1 << 4)
 
 class RegAlloc
 {
@@ -197,11 +192,6 @@ public:
 
    bool exec();
    bool execFunc();
-
-private:
-   bool coalesceValues(unsigned int mask);
-   bool linearScan();
-   bool allocateConstrainedValues();
 
 private:
    class PhiMovesPass : public Pass {
@@ -230,19 +220,25 @@ private:
 
       bool insertConstraintMoves();
 
+      void condenseDefs(Instruction *);
+      void condenseSrcs(Instruction *, int first, int last);
+
       void addHazard(Instruction *i, const ValueRef *src);
       void textureMask(TexInstruction *);
       void addConstraint(Instruction *, int s, int n);
       bool detectConflict(Instruction *, int s);
 
-      DLList constrList;
+      // target specific functions, TOOD: put in subclass or Target
+      void texConstraintNV50(TexInstruction *);
+      void texConstraintNVC0(TexInstruction *);
+      void texConstraintNVE0(TexInstruction *);
+
+      std::list<Instruction *> constrList;
+
+      const Target *targ;
    };
 
    bool buildLiveSets(BasicBlock *);
-   void collectLValues(DLList&, bool assignedOnly);
-
-   void insertOrderedTail(DLList&, Value *);
-   inline Instruction *insnBySerial(int);
 
 private:
    Program *prog;
@@ -254,11 +250,33 @@ private:
    int sequence; // for manual passes through CFG
 };
 
-Instruction *
-RegAlloc::insnBySerial(int serial)
+typedef std::pair<Value *, Value *> ValuePair;
+
+class SpillCodeInserter
 {
-   return reinterpret_cast<Instruction *>(insns.get(serial));
-}
+public:
+   SpillCodeInserter(Function *fn) : func(fn), stackSize(0), assignBase(0) { }
+   bool run(const std::list<ValuePair>&);
+   Symbol *assignSlot(const Interval&, unsigned int size);
+
+private:
+   Function *func;
+
+   struct SpillSlot
+   {
+      Interval occup;
+      std::list<Value *> residents; // needed to recalculate occup
+      Symbol *sym;
+      int32_t offset;
+      inline uint8_t size() const { return sym->reg.size; }
+   };
+   std::list<SpillSlot> slots;
+   int32_t stackSize;
+   int32_t assignBase;
+
+   LValue *unspill(Instruction *usei, LValue *, Value *slot);
+   void spill(Instruction *defi, Value *slot, LValue *);
+};
 
 void
 RegAlloc::BuildIntervalsPass::addLiveRange(Value *val,
@@ -312,23 +330,26 @@ RegAlloc::PhiMovesPass::visit(BasicBlock *bb)
    Instruction *phi, *mov;
    BasicBlock *pb, *pn;
 
+   std::stack<BasicBlock *> stack;
+
    for (Graph::EdgeIterator ei = bb->cfg.incident(); !ei.end(); ei.next()) {
-      pb = pn = BasicBlock::get(ei.getNode());
+      pb = BasicBlock::get(ei.getNode());
       assert(pb);
+      if (needNewElseBlock(bb, pb))
+         stack.push(pb);
+   }
+   while (!stack.empty()) {
+      pb = stack.top();
+      pn = new BasicBlock(func);
+      stack.pop();
 
-      if (needNewElseBlock(bb, pb)) {
-         pn = new BasicBlock(func);
+      pb->cfg.detach(&bb->cfg);
+      pb->cfg.attach(&pn->cfg, Graph::Edge::TREE);
+      pn->cfg.attach(&bb->cfg, Graph::Edge::FORWARD);
 
-         // deletes an edge, iterator is invalid after this:
-         pb->cfg.detach(&bb->cfg);
-         pb->cfg.attach(&pn->cfg, Graph::Edge::TREE);
-         pn->cfg.attach(&bb->cfg, Graph::Edge::FORWARD); // XXX: check order !
-
-         assert(pb->getExit()->op != OP_CALL);
-         if (pb->getExit()->asFlow()->target.bb == bb)
-            pb->getExit()->asFlow()->target.bb = pn;
-         break;
-      }
+      assert(pb->getExit()->op != OP_CALL);
+      if (pb->getExit()->asFlow()->target.bb == bb)
+         pb->getExit()->asFlow()->target.bb = pn;
    }
 
    // insert MOVs (phi->src(j) should stem from j-th in-BB)
@@ -567,36 +588,356 @@ RegAlloc::BuildIntervalsPass::visit(BasicBlock *bb)
    return true;
 }
 
+
+#define JOIN_MASK_PHI        (1 << 0)
+#define JOIN_MASK_UNION      (1 << 1)
+#define JOIN_MASK_MOV        (1 << 2)
+#define JOIN_MASK_TEX        (1 << 3)
+
+class GCRA
+{
+public:
+   GCRA(Function *, SpillCodeInserter&);
+   ~GCRA();
+
+   bool allocateRegisters(ArrayList&);
+   void print() const;
+
+private:
+   class RIG_Node : public Graph::Node
+   {
+   public:
+      RIG_Node();
+
+      void init(const RegisterSet&, LValue *);
+
+      void addInterference(RIG_Node *);
+      void addRegPreference(RIG_Node *);
+
+      inline LValue *getValue() const
+      {
+         return reinterpret_cast<LValue *>(data);
+      }
+      inline void setValue(LValue *lval) { data = lval; }
+
+      inline uint8_t getCompMask() const
+      {
+         return ((1 << colors) - 1) << (reg & 7);
+      }
+
+      static inline RIG_Node *get(const Graph::EdgeIterator& ei)
+      {
+         return static_cast<RIG_Node *>(ei.getNode());
+      }
+
+   public:
+      uint32_t degree;
+      uint16_t degreeLimit; // if deg < degLimit, node is trivially colourable
+      uint16_t colors;
+
+      DataFile f;
+      int32_t reg;
+
+      float weight;
+
+      RIG_Node *next;
+      RIG_Node *prev;
+
+      // union of the live intervals of all coalesced values
+      // we want to retain the separate intervals for compound values
+      Interval livei;
+
+      std::list<RIG_Node *> prefRegs;
+   };
+
+private:
+   inline RIG_Node *getNode(const LValue *v) const { return &nodes[v->id]; }
+
+   void buildRIG(ArrayList&);
+   bool coalesce(ArrayList&);
+   bool doCoalesce(ArrayList&, unsigned int mask);
+   void calculateSpillWeights();
+   void simplify();
+   bool selectRegisters();
+   void cleanup(const bool success);
+
+   void simplifyEdge(RIG_Node *, RIG_Node *);
+   void simplifyNode(RIG_Node *);
+
+   bool coalesceValues(Value *, Value *, bool force);
+   void resolveSplitsAndMerges();
+   void makeCompound(Instruction *, bool isSplit);
+
+   inline void checkInterference(const RIG_Node *, Graph::EdgeIterator&);
+
+   inline void insertOrderedTail(std::list<RIG_Node *>&, RIG_Node *);
+   void checkList(std::list<RIG_Node *>&);
+
+private:
+   std::stack<uint32_t> stack;
+
+   // list headers for simplify() phase
+   RIG_Node lo[2];
+   RIG_Node hi;
+
+   Graph RIG;
+   RIG_Node *nodes;
+   unsigned int nodeCount;
+
+   Function *func;
+   Program *prog;
+
+   static uint8_t relDegree[17][17];
+
+   RegisterSet regs;
+
+   // need to adjust register id for participants of OP_MERGE/SPLIT
+   std::list<Instruction *> merges;
+   std::list<Instruction *> splits;
+
+   SpillCodeInserter& spill;
+   std::list<ValuePair> mustSpill;
+};
+
+uint8_t GCRA::relDegree[17][17];
+
+GCRA::RIG_Node::RIG_Node() : Node(NULL), next(this), prev(this)
+{
+   colors = 0;
+}
+
+void
+GCRA::print() const
+{
+   for (unsigned int i = 0; i < nodeCount; ++i) {
+      if (!nodes[i].colors)
+         continue;
+      INFO("NODE[%%%i]: %u colors, weight %f, reg %i\n",
+           i,
+           nodes[i].colors,nodes[i].weight,nodes[i].reg);
+      INFO(" -><-");
+
+      for (Graph::EdgeIterator ei = nodes[i].outgoing(); !ei.end(); ei.next())
+         INFO(" %%%i", RIG_Node::get(ei)->getValue()->id);
+      for (Graph::EdgeIterator ei = nodes[i].incident(); !ei.end(); ei.next())
+         INFO(" %%%i", RIG_Node::get(ei)->getValue()->id);
+      INFO("\n");
+   }
+}
+
+void
+GCRA::RIG_Node::init(const RegisterSet& regs, LValue *lval)
+{
+   setValue(lval);
+   if (lval->reg.data.id >= 0)
+      lval->noSpill = lval->fixedReg = 1;
+
+   colors = regs.units(lval->reg.file, lval->reg.size);
+   f = lval->reg.file;
+   reg = -1;
+   if (lval->reg.data.id >= 0)
+      reg = regs.idToUnits(f, lval->reg.size, lval->reg.data.id);
+
+   weight = std::numeric_limits<float>::infinity();
+   degree = 0;
+   degreeLimit = regs.getFileSize(lval->reg.file);
+
+   INFO("RIG_Node[%%%i]: colors = %u, reg = %i, f = %u, degLim = %u\n",
+        lval->id, colors, reg, f, degreeLimit);
+
+   livei.insert(lval->livei);
+}
+
 bool
-RegAlloc::coalesceValues(unsigned int mask)
+GCRA::coalesceValues(Value *dst, Value *src, bool force)
+{
+   LValue *rep = dst->join->asLValue();
+   LValue *val = src->join->asLValue();
+
+   if (!force && val->reg.data.id >= 0) {
+      rep = src->join->asLValue();
+      val = dst->join->asLValue();
+   }
+   RIG_Node *nRep = &nodes[rep->id];
+   RIG_Node *nVal = &nodes[val->id];
+
+   INFO("%s: %%%i($r%i) %%%i($r%i)\n", __FUNCTION__,
+        rep->id, rep->reg.data.id,
+        val->id, val->reg.data.id);
+
+   if (src->reg.file != dst->reg.file) {
+      INFO("file fail\n");
+      if (!force)
+         return false;
+      WARN("forced coalescing of values in different files !\n");
+   }
+   if (!force && dst->reg.size != src->reg.size) {
+      INFO("size fail\n");
+      return false;
+   }
+
+   INFO("joining %%%i($%i) <- %%%i\n", rep->id, rep->reg.data.id, val->id);
+
+   if ((rep->reg.data.id >= 0) && (rep->reg.data.id != val->reg.data.id)) {
+      if (force) {
+         if (val->reg.data.id >= 0)
+            WARN("forced coalescing of values in different fixed regs !\n");
+      } else {
+         if (val->reg.data.id >= 0)
+            return false;
+         INFO("join of precolored with uncolored reg, checking ...\n");
+         // make sure that there is no overlap with the fixed register of rep
+         for (ArrayList::Iterator it = func->allLValues.iterator();
+              !it.end(); it.next()) {
+            Value *reg = reinterpret_cast<Value *>(it.get())->asLValue();
+            assert(reg);
+            if (reg->interfers(rep) && reg->livei.overlaps(nVal->livei))
+               return false;
+         }
+         INFO("no conflicts\n");
+      }
+   }
+
+   if (!force && nRep->livei.overlaps(nVal->livei)) {
+      INFO("overlap fail\n");
+      return false;
+   }
+   INFO("good\n");
+
+   // set join pointer of all values joined with val
+   for (Value::DefIterator def = val->defs.begin(); def != val->defs.end();
+        ++def)
+      (*def)->get()->join = rep;
+   assert(rep->join == rep && val->join == rep);
+
+   // add val's definitions to rep and extend the live interval of its RIG node
+   rep->defs.insert(rep->defs.end(), val->defs.begin(), val->defs.end());
+   nRep->livei.unify(nVal->livei);
+   return true;
+}
+
+bool
+GCRA::coalesce(ArrayList& insns)
+{
+   bool ret = doCoalesce(insns, JOIN_MASK_PHI);
+   if (!ret)
+      return false;
+   switch (func->getProgram()->getTarget()->getChipset() & ~0xf) {
+   case 0x50:
+   case 0x80:
+   case 0x90:
+   case 0xa0:
+      ret = doCoalesce(insns, JOIN_MASK_UNION | JOIN_MASK_TEX);
+      break;
+   case 0xc0:
+   case 0xd0:
+   case 0xe0:
+      ret = doCoalesce(insns, JOIN_MASK_UNION);
+      break;
+   default:
+      break;
+   }
+   if (!ret)
+      return false;
+   return doCoalesce(insns, JOIN_MASK_MOV);
+}
+
+static inline uint8_t makeCompMask(int compSize, int base, int size)
+{
+   uint8_t m = ((1 << size) - 1) << base;
+
+   switch (compSize) {
+   case 1:
+      return 0xff;
+   case 2:
+      m |= (m << 2);
+      return (m << 4) | m;
+   case 3:
+   case 4:
+      return (m << 4) | m;
+   default:
+      assert(compSize <= 8);
+      return m;
+   }
+}
+
+static inline void copyCompound(Value *dst, Value *src)
+{
+   LValue *ldst = dst->asLValue();
+   LValue *lsrc = src->asLValue();
+
+   ldst->compound = lsrc->compound;
+   ldst->compMask = lsrc->compMask;
+}
+
+void
+GCRA::makeCompound(Instruction *insn, bool split)
+{
+   LValue *rep = (split ? insn->getSrc(0) : insn->getDef(0))->asLValue();
+
+   INFO("makeCompound(rep %%%i): ", rep->id); insn->print();
+
+   const unsigned int size = getNode(rep)->colors;
+   unsigned int base = 0;
+
+   if (!rep->compound)
+      rep->compMask = 0xff;
+   rep->compound = 1;
+
+   for (int c = 0; split ? insn->defExists(c) : insn->srcExists(c); ++c) {
+      LValue *val = (split ? insn->getDef(c) : insn->getSrc(c))->asLValue();
+
+      val->compound = 1;
+      if (!val->compMask)
+         val->compMask = 0xff;
+      val->compMask &= makeCompMask(size, base, getNode(val)->colors);
+      assert(val->compMask);
+
+      INFO("subval %%%i got mask: %x\n", val->id, val->compMask);
+
+      base += getNode(val)->colors;
+   }
+   assert(base == size);
+}
+
+bool
+GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
 {
    int c, n;
 
    for (n = 0; n < insns.getSize(); ++n) {
       Instruction *i;
-      Instruction *insn = insnBySerial(n);
+      Instruction *insn = reinterpret_cast<Instruction *>(insns.get(n));
 
       switch (insn->op) {
       case OP_PHI:
          if (!(mask & JOIN_MASK_PHI))
             break;
          for (c = 0; insn->srcExists(c); ++c)
-            if (!insn->getDef(0)->coalesce(insn->getSrc(c), false)) {
+            if (!coalesceValues(insn->getDef(0), insn->getSrc(c), false)) {
+               // this is bad
                ERROR("failed to coalesce phi operands\n");
                return false;
             }
          break;
       case OP_UNION:
+      case OP_MERGE:
          if (!(mask & JOIN_MASK_UNION))
             break;
+         if (insn->op == OP_MERGE)
+            merges.push_back(insn);
          for (c = 0; insn->srcExists(c); ++c)
-            insn->getDef(0)->coalesce(insn->getSrc(c), true);
+            coalesceValues(insn->getDef(0), insn->getSrc(c), true);
+         if (insn->srcExists(1))
+            makeCompound(insn, false);
          break;
-      case OP_CONSTRAINT:
-         if (!(mask & JOIN_MASK_CONSTRAINT))
+      case OP_SPLIT:
+         if (!(mask & JOIN_MASK_UNION))
             break;
-         for (c = 0; c < 4 && insn->srcExists(c); ++c)
-            insn->getDef(c)->coalesce(insn->getSrc(c), true);
+         splits.push_back(insn);
+         for (c = 0; insn->defExists(c); ++c)
+            coalesceValues(insn->getSrc(0), insn->getDef(c), true);
+         makeCompound(insn, true);
          break;
       case OP_MOV:
          if (!(mask & JOIN_MASK_MOV))
@@ -605,11 +946,18 @@ RegAlloc::coalesceValues(unsigned int mask)
          if (!insn->getDef(0)->uses.empty())
             i = insn->getDef(0)->uses.front()->getInsn();
          // if this is a contraint-move there will only be a single use
-         if (i && i->op == OP_CONSTRAINT)
+         if (i && i->op == OP_MERGE) // do we really still need this ?
             break;
          i = insn->getSrc(0)->getUniqueInsn();
-         if (i && !i->constrainedDefs())
-            insn->getDef(0)->coalesce(insn->getSrc(0), false);
+         insn->print();
+         INFO("MOV: should we join ?");
+         if (i && !i->constrainedDefs()) {
+            INFO(" - yes\n");
+            if (coalesceValues(insn->getDef(0), insn->getSrc(0), false))
+               copyCompound(insn->getSrc(0), insn->getDef(0));
+         } else {
+            INFO(" - no\n");
+         }
          break;
       case OP_TEX:
       case OP_TXB:
@@ -621,8 +969,8 @@ RegAlloc::coalesceValues(unsigned int mask)
       case OP_TEXCSAA:
          if (!(mask & JOIN_MASK_TEX))
             break;
-         for (c = 0; c < 4 && insn->srcExists(c); ++c)
-            insn->getDef(c)->coalesce(insn->getSrc(c), true);
+         for (c = 0; insn->srcExists(c) && c != insn->predSrc; ++c)
+            coalesceValues(insn->getDef(c), insn->getSrc(c), true);
          break;
       default:
          break;
@@ -632,186 +980,572 @@ RegAlloc::coalesceValues(unsigned int mask)
 }
 
 void
-RegAlloc::insertOrderedTail(DLList &list, Value *val)
+GCRA::RIG_Node::addInterference(RIG_Node *node)
 {
-   // we insert the live intervals in order, so this should be short
-   DLList::Iterator iter = list.revIterator();
-   const int begin = val->livei.begin();
-   for (; !iter.end(); iter.next()) {
-      if (reinterpret_cast<Value *>(iter.get())->livei.begin() <= begin)
-         break;
-   }
-   iter.insert(val);
+   /*
+   INFO("ADD_INTERFERENCE: %%%i XX %%%i\n", this->getValue()->id, node->getValue()->id);
+   this->livei.print();
+   node->livei.print();
+   */
+   this->degree += relDegree[node->colors][colors];
+   node->degree += relDegree[colors][node->colors];
+
+   this->attach(node, Graph::Edge::CROSS);
 }
 
-static void
-checkList(DLList &list)
+void
+GCRA::RIG_Node::addRegPreference(RIG_Node *node)
 {
-   Value *prev = NULL;
-   Value *next = NULL;
+   prefRegs.push_back(node);
+}
 
-   for (DLList::Iterator iter = list.iterator(); !iter.end(); iter.next()) {
-      next = Value::get(iter);
-      assert(next);
-      if (prev) {
-         assert(prev->livei.begin() <= next->livei.begin());
-      }
-      assert(next->join == next);
-      prev = next;
+GCRA::GCRA(Function *fn, SpillCodeInserter& spill) :
+   func(fn),
+   regs(fn->getProgram()->getTarget()),
+   spill(spill)
+{
+   prog = func->getProgram();
+
+   // initialize relative degrees array - i takes away from j
+   for (int i = 1; i <= 16; ++i)
+      for (int j = 1; j <= 16; ++j)
+         relDegree[i][j] = j * ((i + j - 1) / j);
+}
+
+GCRA::~GCRA()
+{
+   if (nodes)
+      delete[] nodes;
+}
+
+void
+GCRA::checkList(std::list<RIG_Node *>& lst)
+{
+   GCRA::RIG_Node *prev = NULL;
+
+   for (std::list<RIG_Node *>::iterator it = lst.begin();
+        it != lst.end();
+        ++it) {
+      assert((*it)->getValue()->join == (*it)->getValue());
+      if (prev)
+         assert(prev->livei.begin() <= (*it)->livei.begin());
+      prev = *it;
    }
 }
 
 void
-RegAlloc::collectLValues(DLList &list, bool assignedOnly)
+GCRA::insertOrderedTail(std::list<RIG_Node *>& list, RIG_Node *node)
 {
+   // only the intervals of joined values don't necessarily arrive in order
+   std::list<RIG_Node *>::iterator prev, it;
+   for (it = list.end(); it != list.begin(); it = prev) {
+      prev = it;
+      --prev;
+      if ((*prev)->livei.begin() <= node->livei.begin())
+         break;
+   }
+   list.insert(it, node);
+}
+
+void
+GCRA::buildRIG(ArrayList& insns)
+{
+   std::list<RIG_Node *> values, active;
+
    for (std::deque<ValueDef>::iterator it = func->ins.begin();
-        it != func->ins.end(); ++it) {
-      if (!assignedOnly || it->get()->reg.data.id >= 0)
-         insertOrderedTail(list, it->get());
-   }
+        it != func->ins.end(); ++it)
+      insertOrderedTail(values, getNode(it->get()->asLValue()));
 
-   for (int n = 0; n < insns.getSize(); ++n) {
-      Instruction *i = insnBySerial(n);
-
-      for (int d = 0; i->defExists(d); ++d)
-         if (!i->getDef(d)->livei.isEmpty())
-            if (!assignedOnly || i->getDef(d)->reg.data.id >= 0)
-               insertOrderedTail(list, i->getDef(d));
+   for (int i = 0; i < insns.getSize(); ++i) {
+      Instruction *insn = reinterpret_cast<Instruction *>(insns.get(i));
+      for (int d = 0; insn->defExists(d); ++d)
+         if (insn->getDef(d)->rep() == insn->getDef(d))
+            insertOrderedTail(values, getNode(insn->getDef(d)->asLValue()));
    }
-   checkList(list);
+   checkList(values);
+
+   while (!values.empty()) {
+      RIG_Node *cur = values.front();
+
+      for (std::list<RIG_Node *>::iterator it = active.begin();
+           it != active.end();
+           ++it) {
+         RIG_Node *node = *it;
+         INFO("RIG_Node: cur=%p, node=%p\n", cur, node);
+
+         if (node->livei.end() <= cur->livei.begin()) {
+            it = active.erase(it);
+            --it;
+         } else
+         if (node->f == cur->f && node->livei.overlaps(cur->livei)) {
+            cur->addInterference(node);
+         }
+      }
+      values.pop_front();
+      active.push_back(cur);
+   }
+}
+
+void
+GCRA::calculateSpillWeights()
+{
+   for (unsigned int i = 0; i < nodeCount; ++i) {
+      RIG_Node *const n = &nodes[i];
+      if (!nodes[i].colors || nodes[i].livei.isEmpty())
+         continue;
+      if (nodes[i].reg >= 0) {
+         // update max reg
+         INFO("oldmax = %i\n", regs.getMaxAssigned(n->f));
+         regs.occupy(n->f, n->reg, n->colors);
+         INFO("occup $r%i +%i -> %i\n", n->reg, n->colors, regs.getMaxAssigned(n->f));
+         continue;
+      }
+      LValue *val = nodes[i].getValue();
+
+      if (!val->noSpill) {
+         int rc = 0;
+         for (Value::DefIterator it = val->defs.begin();
+              it != val->defs.end();
+              ++it)
+            rc += (*it)->get()->refCount();
+
+         nodes[i].weight = (float)rc * (float)rc / (float)nodes[i].livei.extent();
+
+         INFO("rc = %i, extent = %i\n", rc, nodes[i].livei.extent());
+      }
+      INFO("WEIGHT[%%%i] = %f\n", val->id, nodes[i].weight);
+
+      if (nodes[i].degree < nodes[i].degreeLimit) {
+         int l = 0;
+         if (val->reg.size > 4)
+            l = 1;
+         DLLIST_ADDHEAD(&lo[l], &nodes[i]);
+      } else {
+         DLLIST_ADDHEAD(&hi, &nodes[i]);
+      }
+   }
+   if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
+      this->print();
+}
+
+void
+GCRA::simplifyEdge(RIG_Node *a, RIG_Node *b)
+{
+   bool move = b->degree >= b->degreeLimit;
+
+   INFO("edge: (%%%i, %u) <-> (%%%i, degree %u/%u)\n", a->getValue()->id, a->degree, b->getValue()->id, b->degree, b->degreeLimit);
+
+   b->degree -= relDegree[a->colors][b->colors];
+
+   move = move && b->degree < b->degreeLimit;
+   INFO("degree lowered to %u, move = %i\n", b->degree, move);
+   if (move && !DLLIST_EMPTY(b)) {
+      int l = (b->getValue()->reg.size > 4) ? 1 : 0;
+      DLLIST_DEL(b);
+      DLLIST_ADDTAIL(&lo[l], b);
+      INFO("moved %%%i to lo[%i]\n", b->getValue()->id, l);
+   }
+}
+
+void
+GCRA::simplifyNode(RIG_Node *node)
+{
+   for (Graph::EdgeIterator ei = node->outgoing(); !ei.end(); ei.next())
+      simplifyEdge(node, RIG_Node::get(ei));
+
+   for (Graph::EdgeIterator ei = node->incident(); !ei.end(); ei.next())
+      simplifyEdge(node, RIG_Node::get(ei));
+
+   DLLIST_DEL(node);
+   stack.push(node->getValue()->id);
+   INFO("pushed %%%i\n", node->getValue()->id);
+}
+
+void
+GCRA::simplify()
+{
+   for (;;) {
+      if (!DLLIST_EMPTY(&lo[0])) {
+         do {
+            INFO("%%%i is assignable (degree %u)\n", lo[0].next->getValue()->id, lo[0].next->degree);
+            simplifyNode(lo[0].next);
+         } while (!DLLIST_EMPTY(&lo[0]));
+      } else
+      if (!DLLIST_EMPTY(&lo[1])) {
+         INFO("%%%i is assignable (degree %u)\n", lo[1].next->getValue()->id, lo[1].next->degree);
+         simplifyNode(lo[1].next);
+      } else
+      if (!DLLIST_EMPTY(&hi)) {
+         RIG_Node *best = hi.next;
+         float bestScore = best->weight / (float)best->degree;
+         // spill candidate
+         for (RIG_Node *it = best->next; it != &hi; it = it->next) {
+            float score = it->weight / (float)it->degree;
+            INFO("candidate %%%i: %f\n", it->getValue()->id, score);
+            if (score < bestScore) {
+               best = it;
+               bestScore = score;
+            }
+         }
+         if (isinf(bestScore)) {
+            ERROR("no viable spill candidates left\n");
+            assert(0);
+            break;
+         }
+         INFO("=== CHOSEN_TO_SPILL: %%%i\n", best->getValue()->id);
+         simplifyNode(best);
+      } else {
+         break;
+      }
+   }
+}
+
+void
+GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
+{
+   const RIG_Node *intf = RIG_Node::get(ei);
+
+   //if (intf->reg < 0)
+   //   INFO("%%%i X %%%i: not reg assigned yet\n", node->getValue()->id, intf->getValue()->id);
+
+   if (intf->reg < 0)
+      return;
+   const LValue *vA = node->getValue();
+   const LValue *vB = intf->getValue();
+
+   //INFO("%%%i X assigned %%%i (reg %i..%i)\n", vA->id, vB->id, intf->reg, intf->reg + intf->colors - 1);
+   node->livei.print();
+   intf->livei.print();
+
+   if (vA->compound | vB->compound) {
+      // NOTE: this only works for >aligned< register tuples !
+      for (Value::DefCIterator D = vA->defs.begin(); D != vA->defs.end(); ++D) {
+      for (Value::DefCIterator d = vB->defs.begin(); d != vB->defs.end(); ++d) {
+         const LValue *vD = (*D)->get()->asLValue();
+         const LValue *vd = (*d)->get()->asLValue();
+
+         if (!vD->livei.overlaps(vd->livei)) {
+            INFO("subDef %%%i X assigned %%%i: no overlap\n", vD->id, vd->id);
+            continue;
+         }
+
+         uint8_t mask = vD->compound ? vD->compMask : ~0;
+         if (vd->compound) {
+            assert(vB->compound);
+            mask &= vd->compMask & vB->compMask;
+         } else {
+            mask &= ((1 << intf->colors) - 1) << (intf->reg & 7);
+         }
+
+         INFO("(%%%i)%x X (%%%i)%x & %x $r%i+%x\n",
+              vD->id,
+              vD->compound ? vD->compMask : 0xff,
+              vd->id,
+              vd->compound ? vd->compMask :
+              (((1 << intf->colors) - 1) << (intf->reg & 7)),
+              vB->compMask, intf->reg & ~7, mask);
+         if (mask)
+            regs.occupyMask(node->f, intf->reg & ~7, mask);
+      }
+      }
+   } else {
+      INFO("normal interference %%%i ($r%i + %u)\n", vB->id, intf->reg, intf->colors);
+      regs.occupy(node->f, intf->reg, intf->colors);
+   }
 }
 
 bool
-RegAlloc::allocateConstrainedValues()
+GCRA::selectRegisters()
 {
-   Value *defs[4];
-   RegisterSet regSet[4];
-   DLList regVals;
+   while (!stack.empty()) {
+      RIG_Node *node = &nodes[stack.top()];
+      stack.pop();
 
-   INFO_DBG(prog->dbgFlags, REG_ALLOC, "RA: allocating constrained values\n");
+      regs.reset(node->f);
 
-   collectLValues(regVals, true);
+      INFO("testing interferences for %%%i (%u colors)\n", node->getValue()->id, node->colors);
+      for (Graph::EdgeIterator ei = node->outgoing(); !ei.end(); ei.next())
+         checkInterference(node, ei);
+      for (Graph::EdgeIterator ei = node->incident(); !ei.end(); ei.next())
+         checkInterference(node, ei);
 
-   for (int c = 0; c < 4; ++c)
-      regSet[c].init(prog->getTarget());
-
-   for (int n = 0; n < insns.getSize(); ++n) {
-      Instruction *i = insnBySerial(n);
-
-      const int vecSize = i->defCount(0xf);
-      if (vecSize < 2)
-         continue;
-      assert(vecSize <= 4);
-
-      for (int c = 0; c < vecSize; ++c)
-         defs[c] = i->def(c).rep();
-
-      if (defs[0]->reg.data.id >= 0) {
-         for (int c = 1; c < vecSize; ++c) {
-            assert(defs[c]->reg.data.id >= 0);
+      if (!node->prefRegs.empty()) {
+         for (std::list<RIG_Node *>::const_iterator it = node->prefRegs.begin();
+              it != node->prefRegs.end();
+              ++it) {
+            if ((*it)->reg >= 0 &&
+                regs.occupy(node->f, (*it)->reg, node->colors)) {
+               node->reg = (*it)->reg;
+               break;
+            }
          }
+      }
+      if (node->reg >= 0)
          continue;
+      LValue *lval = node->getValue();
+      INFO("assigning regs for %%%i (%u colors)\n", node->getValue()->id, node->colors);
+      regs.print();
+      bool ret = regs.assign(node->f, node->colors, node->reg);
+      INFO("assigned reg %i\n", node->reg);
+      if (ret) {
+         lval->compMask = node->getCompMask();
+      } else {
+         Symbol *slot = NULL;
+         if (lval->reg.file == FILE_GPR)
+            slot = spill.assignSlot(node->livei, lval->reg.size);
+         INFO("MUST_SPILL: %%%i (size %u)\n", lval->id, lval->reg.size);
+         mustSpill.push_back(ValuePair(lval, slot));
       }
-
-      for (int c = 0; c < vecSize; ++c) {
-         uint32_t mask;
-         regSet[c].reset();
-
-         for (DLList::Iterator it = regVals.iterator(); !it.end(); it.next()) {
-            Value *rVal = Value::get(it);
-            if (rVal->reg.data.id >= 0 && rVal->livei.overlaps(defs[c]->livei))
-               regSet[c].occupy(rVal);
-         }
-         mask = 0x11111111;
-         if (vecSize == 2) // granularity is 2 instead of 4
-            mask |= 0x11111111 << 2;
-         regSet[c].periodicMask(defs[0]->reg.file, 0, ~(mask << c));
-
-         if (!defs[c]->livei.isEmpty())
-            insertOrderedTail(regVals, defs[c]);
-      }
-      for (int c = 1; c < vecSize; ++c)
-         regSet[0].intersect(defs[0]->reg.file, &regSet[c]);
-
-      if (!regSet[0].assign(&defs[0], vecSize)) // TODO: spilling
-         return false;
    }
-   for (int c = 0; c < 4; c += 2)
-      if (regSet[c].getMaxAssigned(FILE_GPR) > prog->maxGPR)
-         prog->maxGPR = regSet[c].getMaxAssigned(FILE_GPR);
+   if (!mustSpill.empty())
+      return false;
+   for (unsigned int i = 0; i < nodeCount; ++i) {
+      LValue *lval = nodes[i].getValue();
+      if (nodes[i].colors > 0)
+         lval->reg.data.id =
+            regs.rbyte(nodes[i].f, nodes[i].reg) / MIN2(lval->reg.size, 4);
+   }
    return true;
 }
 
 bool
-RegAlloc::linearScan()
+GCRA::allocateRegisters(ArrayList& insns)
 {
-   Value *cur, *val;
-   DLList unhandled, active, inactive;
-   RegisterSet f(prog->getTarget()), free(prog->getTarget());
+   bool ret;
 
-   INFO_DBG(prog->dbgFlags, REG_ALLOC, "RA: linear scan\n");
+   INFO("allocateRegisters to %u instructions\n", insns.getSize());
 
-   collectLValues(unhandled, false);
-
-   for (DLList::Iterator cI = unhandled.iterator(); !cI.end();) {
-      cur = Value::get(cI);
-      cI.erase();
-
-      for (DLList::Iterator aI = active.iterator(); !aI.end();) {
-         val = Value::get(aI);
-         if (val->livei.end() <= cur->livei.begin()) {
-            free.release(val);
-            aI.erase();
-         } else
-         if (!val->livei.contains(cur->livei.begin())) {
-            free.release(val);
-            aI.moveToList(inactive);
-         } else {
-            aI.next();
-         }
+   nodeCount = func->allLValues.getSize();
+   nodes = new RIG_Node[nodeCount];
+   if (!nodes)
+      return false;
+   for (unsigned int i = 0; i < nodeCount; ++i) {
+      LValue *lval = reinterpret_cast<LValue *>(func->allLValues.get(i));
+      if (!lval->livei.isEmpty()) {
+         RIG.insert(&nodes[i]);
+         nodes[i].init(regs, lval);
       }
-
-      for (DLList::Iterator iI = inactive.iterator(); !iI.end();) {
-         val = Value::get(iI);
-         if (val->livei.end() <= cur->livei.begin()) {
-            iI.erase();
-         } else
-         if (val->livei.contains(cur->livei.begin())) {
-            free.occupy(val);
-            iI.moveToList(active);
-         } else {
-            iI.next();
-         }
-      }
-      f = free;
-
-      for (DLList::Iterator iI = inactive.iterator(); !iI.end(); iI.next()) {
-         val = Value::get(iI);
-         if (val->livei.overlaps(cur->livei))
-            f.occupy(val);
-      }
-
-      for (DLList::Iterator uI = unhandled.iterator(); !uI.end(); uI.next()) {
-         val = Value::get(uI);
-         if (val->reg.data.id >= 0 && val->livei.overlaps(cur->livei))
-            f.occupy(val);
-      }
-
-      if (cur->reg.data.id < 0) {
-         bool spill = !f.assign(&cur, 1);
-         if (spill) {
-            ERROR("out of registers of file %u\n", cur->reg.file);
-            abort();
-         }
-      }
-      free.occupy(cur);
-      active.insert(cur);
    }
 
-   if (f.getMaxAssigned(FILE_GPR) > prog->maxGPR)
-      prog->maxGPR = f.getMaxAssigned(FILE_GPR);
-   if (free.getMaxAssigned(FILE_GPR) > prog->maxGPR)
-      prog->maxGPR = free.getMaxAssigned(FILE_GPR);
+   // coalesce first, we use only 1 RIG node for a group of joined values
+   ret = coalesce(insns);
+   if (!ret)
+      goto out;
+
+   if (func->getProgram()->dbgFlags & NV50_IR_DEBUG_REG_ALLOC) {
+      func->print();
+      func->printLiveIntervals();
+   }
+
+   buildRIG(insns);
+   calculateSpillWeights();
+   simplify();
+
+   ret = selectRegisters();
+   INFO("selectRegisters %s\n", ret ? "succeeded" : "failed");
+   if (!ret) {
+      INFO("inserting spill code ...\n");
+      for (std::list<ValuePair>::iterator it = mustSpill.begin();
+           it != mustSpill.end(); ++it)
+         INFO("TO_SPILL: %%%i -> l[%x]\n",
+              it->first->id, it->second->reg.data.offset);
+      regs.reset(FILE_GPR, true);
+      spill.run(mustSpill);
+      INFO("done\n");
+      prog->print();
+   } else {
+      prog->maxGPR = regs.getMaxAssigned(FILE_GPR);
+   }
+
+out:
+   cleanup(ret);
+   return ret;
+}
+
+void
+GCRA::cleanup(const bool success)
+{
+   mustSpill.clear();
+
+   for (ArrayList::Iterator it = func->allLValues.iterator();
+        !it.end(); it.next()) {
+      LValue *lval =  reinterpret_cast<LValue *>(it.get());
+
+      lval->livei.clear();
+
+      lval->compound = 0;
+      lval->compMask = 0;
+
+      if (lval->join == lval)
+         continue;
+
+      if (success) {
+         lval->reg.data.id = lval->join->reg.data.id;
+      } else {
+         for (Value::DefIterator d = lval->defs.begin(); d != lval->defs.end();
+              ++d)
+            lval->join->defs.remove(*d);
+         lval->join = lval;
+      }
+   }
+
+   if (success)
+      resolveSplitsAndMerges();
+   splits.clear(); // avoid duplicate entries on next coalesce pass
+   merges.clear();
+
+   delete[] nodes;
+   nodes = NULL;
+}
+
+Symbol *
+SpillCodeInserter::assignSlot(const Interval &livei, unsigned int size)
+{
+   SpillSlot slot;
+   const int32_t base = assignBase + (size - (assignBase % size));
+   int32_t offset;
+   std::list<SpillSlot>::iterator pos = slots.end(), it = slots.begin();
+
+   slot.sym = NULL;
+
+   INFO("assign slot[%u bytes] in stack(%u:%u) to livei: ", size, assignBase, stackSize); livei.print();
+
+   for (offset = base; offset < stackSize; offset += size) {
+      INFO("going to offset %u\n", offset);
+      while (it != slots.end() && it->offset < offset)
+         ++it;
+      if (it == slots.end()) // no slots left
+         break;
+      std::list<SpillSlot>::iterator bgn = it;
+
+      while (it != slots.end() && it->offset < (offset + size)) {
+         INFO("checking for overlap: l[%x]\n", it->sym->reg.data.offset);
+         it->occup.print();
+         if (it->occup.overlaps(livei))
+            break;
+         ++it;
+         INFO("-\n");
+      }
+      if (it == slots.end() || it->offset >= (offset + size)) {
+         INFO("fits, adding livei\n");
+         // fits
+         for (; bgn != slots.end() && bgn->offset < (offset + size); ++bgn) {
+            bgn->occup.insert(livei);
+            if (bgn->size() == size) {
+               slot.sym = bgn->sym;
+               INFO("sizefit: %x/%x\n", bgn->offset, slot.sym->reg.data.offset);
+            }
+         }
+         break;
+      }
+   }
+   if (!slot.sym) {
+      INFO("no fit, new sym at %x\n", offset);
+      stackSize = offset + size;
+      slot.offset = offset;
+      slot.sym = new_Symbol(func->getProgram(), FILE_MEMORY_LOCAL);
+      if (!func->stackPtr)
+         offset += func->tlsBase;
+      slot.sym->setAddress(NULL, offset);
+      slot.sym->reg.size = size;
+      slots.insert(pos, slot)->occup.insert(livei);
+   }
+   return slot.sym;
+}
+
+void
+SpillCodeInserter::spill(Instruction *defi, Value *slot, LValue *lval)
+{
+   const DataType ty = typeOfSize(slot->reg.size);
+
+   Instruction *st;
+   if (slot->reg.file == FILE_MEMORY_LOCAL) {
+      st = new_Instruction(func, OP_STORE, ty);
+      st->setSrc(0, slot);
+      st->setSrc(1, lval);
+      lval->noSpill = 1;
+   } else {
+      st = new_Instruction(func, OP_CVT, ty);
+      st->setDef(0, slot);
+      st->setSrc(0, lval);
+   }
+   defi->bb->insertAfter(defi, st);
+}
+
+LValue *
+SpillCodeInserter::unspill(Instruction *usei, LValue *lval, Value *slot)
+{
+   const DataType ty = typeOfSize(slot->reg.size);
+
+   lval = cloneShallow(func, lval);
+
+   Instruction *ld;
+   if (slot->reg.file == FILE_MEMORY_LOCAL) {
+      lval->noSpill = 1;
+      ld = new_Instruction(func, OP_LOAD, ty);
+   } else {
+      ld = new_Instruction(func, OP_CVT, ty);
+   }
+   ld->setDef(0, lval);
+   ld->setSrc(0, slot);
+
+   usei->bb->insertBefore(usei, ld);
+   return lval;
+}
+
+bool
+SpillCodeInserter::run(const std::list<ValuePair>& lst)
+{
+   for (std::list<ValuePair>::const_iterator it = lst.begin(); it != lst.end();
+        ++it) {
+      LValue *lval = it->first->asLValue();
+      Symbol *mem = it->second ? it->second->asSym() : NULL;
+
+      for (Value::DefIterator d = lval->defs.begin(); d != lval->defs.end();
+           ++d) {
+         Value *slot = mem ? static_cast<Value *>(mem) : new_LValue(func, FILE_GPR);
+         Value *tmp = NULL;
+         Instruction *last = NULL;
+
+         LValue *dval = (*d)->get()->asLValue();
+         Instruction *defi = (*d)->getInsn();
+
+         // handle uses first or they'll contain the spill stores
+         while (!dval->uses.empty()) {
+            ValueRef *u = dval->uses.front();
+            Instruction *usei = u->getInsn();
+            assert(usei);
+            if (usei->op == OP_PHI) {
+               tmp = (slot->reg.file == FILE_MEMORY_LOCAL) ? NULL : slot;
+               last = NULL;
+            } else
+            if (!last || usei != last->next) { // TODO: sort uses
+               tmp = unspill(usei, dval, slot);
+               last = usei;
+            }
+            u->set(tmp);
+         }
+
+         assert(defi);
+         if (defi->op == OP_PHI) {
+            d = lval->defs.erase(d);
+            --d;
+            if (slot->reg.file == FILE_MEMORY_LOCAL)
+               delete_Instruction(func->getProgram(), defi);
+            else
+               defi->setDef(0, slot);
+         } else {
+            spill(defi, slot, dval);
+         }
+      }
+
+   }
+
+   INFO("done all spills\n");
+   // TODO: We're not trying to reuse old slots in a potential next iteration.
+   //  We have to update the slots' livei intervals to be able to do that.
+   assignBase = stackSize;
+   slots.clear();
    return true;
 }
 
@@ -834,9 +1568,16 @@ RegAlloc::execFunc()
    PhiMovesPass insertPhiMoves;
    ArgumentMovesPass insertArgMoves;
    BuildIntervalsPass buildIntervals;
+   SpillCodeInserter insertSpills(func);
 
-   unsigned int i;
+   GCRA gcra(func, insertSpills);
+
+   unsigned int i, retries;
    bool ret;
+
+   // Prevent TEMPs in shaders' main() from counting as live outputs.
+   if (func == prog->main && prog->getType() != Program::TYPE_COMPUTE)
+      func->outs.resize(0);
 
    ret = insertConstr.exec(func);
    if (!ret)
@@ -846,58 +1587,88 @@ RegAlloc::execFunc()
    if (!ret)
       goto out;
 
-   ret = insertArgMoves.run(func, true);
+   ret = insertArgMoves.run(func);
    if (!ret)
       goto out;
 
-   for (sequence = func->cfg.nextSequence(), i = 0;
-        ret && i <= func->loopNestingBound;
-        sequence = func->cfg.nextSequence(), ++i)
-      ret = buildLiveSets(BasicBlock::get(func->cfg.getRoot()));
-   if (!ret)
-      goto out;
+   // XXX: need to fix up spill slot usage ranges to support > 1 retry
+   for (retries = 0; retries < 3; ++retries) {
+      INFO("try %u\n", retries);
+      // spilling to registers may add live ranges, need to rebuild everything
+      ret = true;
+      for (sequence = func->cfg.nextSequence(), i = 0;
+           ret && i <= func->loopNestingBound;
+           sequence = func->cfg.nextSequence(), ++i)
+         ret = buildLiveSets(BasicBlock::get(func->cfg.getRoot()));
+      if (!ret) {
+         INFO("failed to build live sets\n");
+         break;
+      }
+      INFO("ordering instructions ...\n");
+      func->orderInstructions(this->insns);
+      INFO("instructions ordered\n");
 
-   func->orderInstructions(this->insns);
-
-   ret = buildIntervals.run(func);
-   if (!ret)
-      goto out;
-
-   ret = coalesceValues(JOIN_MASK_PHI);
-   if (!ret)
-      goto out;
-   switch (prog->getTarget()->getChipset() & 0xf0) {
-   case 0x50:
-      ret = coalesceValues(JOIN_MASK_UNION | JOIN_MASK_TEX);
-      break;
-   case 0xc0:
-      ret = coalesceValues(JOIN_MASK_UNION | JOIN_MASK_CONSTRAINT);
-      break;
-   default:
-      break;
+      INFO("building intervals ...\n");
+      ret = buildIntervals.run(func);
+      if (!ret)
+         break;
+      INFO("built intervals ... re-running GCRA\n");
+      ret = gcra.allocateRegisters(insns);
+      if (ret)
+         break; // success
+      if (!ret)
+         INFO("Allocation failed ! Retrying ...\n");
    }
-   if (!ret)
-      goto out;
-   ret = coalesceValues(JOIN_MASK_MOV);
-   if (!ret)
-      goto out;
-
-   if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC) {
-      func->print();
-      func->printLiveIntervals();
-   }
-
-   ret = allocateConstrainedValues() && linearScan();
-   if (!ret)
-      goto out;
+   INFO("RA done\n");
 
 out:
-   // TODO: should probably call destructor on LValues later instead
-   for (ArrayList::Iterator it = func->allLValues.iterator();
-        !it.end(); it.next())
-      reinterpret_cast<LValue *>(it.get())->livei.clear();
-
    return ret;
+}
+
+// TODO: check if modifying Instruction::join here breaks anything
+void
+GCRA::resolveSplitsAndMerges()
+{
+   INFO("resolving splits and merges\n");
+
+   for (std::list<Instruction *>::iterator it = splits.begin();
+        it != splits.end(); ++it) {
+      INFO("SPLIT list: (%p) ", *it); (*it)->print();
+   }
+
+   for (std::list<Instruction *>::iterator it = splits.begin();
+        it != splits.end();
+        ++it) {
+      Instruction *split = *it;
+      INFO("SPLIT(%p):\n", split); split->print();
+      int reg = split->getSrc(0)->reg.data.id;
+      for (int d = 0; split->defExists(d); ++d) {
+         Value *v = split->getDef(d);
+         v->reg.data.id = reg;
+         v->join = v;
+         reg += regs.sizeToId(v->reg.file, v->reg.size);
+      }
+      delete_Instruction(prog, split);
+      INFO("  del'd\n");
+   }
+   splits.clear();
+
+   for (std::list<Instruction *>::iterator it = merges.begin();
+        it != merges.end();
+        ++it) {
+      Instruction *merge = *it;
+      INFO("MERGE(%p):\n", merge); merge->print();
+      int reg = merge->getDef(0)->reg.data.id;
+      for (int s = 0; merge->srcExists(s); ++s) {
+         Value *v = merge->getSrc(s);
+         v->reg.data.id = reg;
+         v->join = v;
+         reg += regs.sizeToId(v->reg.file, v->reg.size);
+      }
+      delete_Instruction(prog, merge);
+      INFO("  del'd\n");
+   }
+   merges.clear();
 }
 
 bool Program::registerAllocation()
@@ -936,17 +1707,10 @@ RegAlloc::InsertConstraintsPass::textureMask(TexInstruction *tex)
    }
    tex->tex.mask = mask;
 
-#if 0 // reorder or set the unused ones NULL ?
-   for (c = 0; c < 4; ++c)
-      if (!(tex->tex.mask & (1 << c)))
-         def[d++] = tex->getDef(c);
-#endif
    for (c = 0; c < d; ++c)
       tex->setDef(c, def[c]);
-#if 1
    for (; c < 4; ++c)
       tex->setDef(c, NULL);
-#endif
 }
 
 bool
@@ -978,8 +1742,10 @@ RegAlloc::InsertConstraintsPass::addConstraint(Instruction *i, int s, int n)
    int d;
 
    // first, look for an existing identical constraint op
-   for (DLList::Iterator it = constrList.iterator(); !it.end(); it.next()) {
-      cst = reinterpret_cast<Instruction *>(it.get());
+   for (std::list<Instruction *>::iterator it = constrList.begin();
+        it != constrList.end();
+        ++it) {
+      cst = (*it);
       if (!i->bb->dominatedBy(cst->bb))
          break;
       for (d = 0; d < n; ++d)
@@ -1000,7 +1766,7 @@ RegAlloc::InsertConstraintsPass::addConstraint(Instruction *i, int s, int n)
    }
    i->bb->insertBefore(i, cst);
 
-   constrList.insert(cst);
+   constrList.push_back(cst);
 }
 
 // Add a dummy use of the pointer source of >= 8 byte loads after the load
@@ -1015,6 +1781,140 @@ RegAlloc::InsertConstraintsPass::addHazard(Instruction *i, const ValueRef *src)
 
 }
 
+// b32 { %r0 %r1 %r2 %r3 } -> b128 %r0q
+void
+RegAlloc::InsertConstraintsPass::condenseDefs(Instruction *insn)
+{
+   uint8_t size = 0;
+   int n;
+   for (n = 0; insn->defExists(n) && insn->def(n).getFile() == FILE_GPR; ++n)
+      size += insn->getDef(n)->reg.size;
+   if (n < 2)
+      return;
+   LValue *lval = new_LValue(func, FILE_GPR);
+   lval->reg.size = size;
+
+   Instruction *split = new_Instruction(func, OP_SPLIT, typeOfSize(size));
+   split->setSrc(0, lval);
+   for (int d = 0; d < n; ++d) {
+      split->setDef(d, insn->getDef(d));
+      insn->setDef(d, NULL);
+   }
+   insn->setDef(0, lval);
+
+   for (int k = 1, d = n; insn->defExists(d); ++d, ++k) {
+      insn->setDef(k, insn->getDef(d));
+      insn->setDef(d, NULL);
+   }
+   insn->bb->insertAfter(insn, split);
+
+   constrList.push_back(split);
+}
+void
+RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
+{
+   uint8_t size = 0;
+   if (a >= b)
+      return;
+   INFO("%s(%i, %i) ", __FUNCTION__, a, b); insn->print();
+   for (int s = a; s <= b; ++s)
+      size += insn->getSrc(s)->reg.size;
+   if (!size)
+      return;
+   LValue *lval = new_LValue(func, FILE_GPR);
+   lval->reg.size = size;
+
+   Instruction *merge = new_Instruction(func, OP_MERGE, typeOfSize(size));
+   merge->setDef(0, lval);
+   INFO("srcs %i .. %i\n", a, b);
+   for (int s = a, i = 0; s <= b; ++s, ++i) {
+      INFO("merge->setSrc(%i, %%%i)\n", s, insn->getSrc(s) ? insn->getSrc(s)->id : -1);
+      merge->setSrc(i, insn->getSrc(s));
+      insn->setSrc(s, NULL);
+   }
+   insn->setSrc(a, lval);
+
+   for (int k = a + 1, s = b + 1; insn->srcExists(s); ++s, ++k) {
+      insn->setSrc(k, insn->getSrc(s));
+      insn->setSrc(s, NULL);
+   }
+   insn->bb->insertBefore(insn, merge);
+
+   constrList.push_back(merge);
+   INFO("MERGED: "); merge->print();
+}
+
+void
+RegAlloc::InsertConstraintsPass::texConstraintNVE0(TexInstruction *tex)
+{
+   textureMask(tex);
+   condenseDefs(tex);
+
+   int n = tex->srcCount(0xff, true);
+   if (n > 4) {
+      condenseSrcs(tex, 0, 3);
+      if (n > 5)
+         condenseSrcs(tex, 4, n - 1);
+   } else
+   if (n > 1) {
+      condenseSrcs(tex, 0, n - 1);
+   }
+}
+
+void
+RegAlloc::InsertConstraintsPass::texConstraintNVC0(TexInstruction *tex)
+{
+   int n, s;
+
+   textureMask(tex);
+
+   if (tex->op == OP_TXQ) {
+      s = tex->srcCount(0xff);
+      n = 0;
+   } else {
+      s = tex->tex.target.getArgCount();
+      if (!tex->tex.target.isArray() &&
+          (tex->tex.rIndirectSrc >= 0 || tex->tex.sIndirectSrc >= 0))
+         ++s;
+      if (tex->op == OP_TXD && tex->tex.useOffsets)
+         ++s;
+      n = tex->srcCount(0xff) - s;
+      assert(n <= 4);
+   }
+
+   if (s > 1)
+      condenseSrcs(tex, 0, s - 1);
+   if (n > 1)
+      condenseSrcs(tex, s, s + (n - 1));
+
+   condenseDefs(tex);
+}
+
+void
+RegAlloc::InsertConstraintsPass::texConstraintNV50(TexInstruction *tex)
+{
+   Value *pred = tex->getPredicate();
+   if (pred)
+      tex->setPredicate(tex->cc, NULL);
+
+   textureMask(tex);
+
+   assert(tex->defExists(0) && tex->srcExists(0));
+   // make src and def count match
+   int c;
+   for (c = 0; tex->srcExists(c) || tex->defExists(c); ++c) {
+      if (!tex->srcExists(c))
+         tex->setSrc(c, new_LValue(func, tex->getSrc(0)->asLValue()));
+      if (!tex->defExists(c))
+         tex->setDef(c, new_LValue(func, tex->getDef(0)->asLValue()));
+   }
+   condenseDefs(tex);
+   condenseSrcs(tex, 0, c - 1);
+
+   if (pred)
+      tex->setPredicate(tex->cc, pred);
+}
+
 // Insert constraint markers for instructions whose multiple sources must be
 // located in consecutive registers.
 bool
@@ -1022,43 +1922,41 @@ RegAlloc::InsertConstraintsPass::visit(BasicBlock *bb)
 {
    TexInstruction *tex;
    Instruction *next;
-   int s, n, size;
+   int s, size;
+
+   targ = bb->getProgram()->getTarget();
 
    for (Instruction *i = bb->getEntry(); i; i = next) {
       next = i->next;
 
       if ((tex = i->asTex())) {
-         textureMask(tex);
-
-         // FIXME: this is target specific
-         if (tex->op == OP_TXQ) {
-            s = tex->srcCount(0xff);
-            n = 0;
-         } else {
-            s = tex->tex.target.getArgCount();
-            if (!tex->tex.target.isArray() &&
-                (tex->tex.rIndirectSrc >= 0 || tex->tex.sIndirectSrc >= 0))
-               ++s;
-	    if (tex->op == OP_TXD && tex->tex.useOffsets)
-               ++s;
-            n = tex->srcCount(0xff) - s;
-            assert(n <= 4);
+         switch (targ->getChipset() & ~0xf) {
+         case 0x50:
+         case 0x80:
+         case 0x90:
+         case 0xa0:
+            texConstraintNV50(tex);
+            break;
+         case 0xc0:
+         case 0xd0:
+            texConstraintNVC0(tex);
+            break;
+         case 0xe0:
+            texConstraintNVE0(tex);
+            break;
+         default:
+            break;
          }
-
-         if (s > 1)
-            addConstraint(i, 0, s);
-         if (n > 1)
-            addConstraint(i, s, n);
       } else
       if (i->op == OP_EXPORT || i->op == OP_STORE) {
          for (size = typeSizeof(i->dType), s = 1; size > 0; ++s) {
             assert(i->srcExists(s));
             size -= i->getSrc(s)->reg.size;
          }
-         if ((s - 1) > 1)
-            addConstraint(i, 1, s - 1);
+         condenseSrcs(i, 1, s - 1);
       } else
-      if (i->op == OP_LOAD) {
+      if (i->op == OP_LOAD || i->op == OP_VFETCH) {
+         condenseDefs(i);
          if (i->src(0).isIndirect(0) && typeSizeof(i->dType) >= 8)
             addHazard(i, i->src(0).getIndirect(0));
       }
@@ -1071,21 +1969,57 @@ RegAlloc::InsertConstraintsPass::visit(BasicBlock *bb)
 bool
 RegAlloc::InsertConstraintsPass::insertConstraintMoves()
 {
-   for (DLList::Iterator it = constrList.iterator(); !it.end(); it.next()) {
-      Instruction *cst = reinterpret_cast<Instruction *>(it.get());
+   INFO("inserting constraint moves for %lu constraints\n", constrList.size());
+   for (std::list<Instruction *>::iterator it = constrList.begin();
+        it != constrList.end();
+        ++it) {
+      Instruction *cst = *it;
+      Instruction *mov;
 
-      for (int s = 0; cst->srcExists(s); ++s) {
-         if (!detectConflict(cst, s))
-             continue;
-         Instruction *mov = new_Instruction(func, OP_MOV,
-                                            typeOfSize(cst->src(s).getSize()));
-         mov->setSrc(0, cst->getSrc(s));
-         mov->setDef(0, new_LValue(func, FILE_GPR));
-         cst->setSrc(s, mov->getDef(0));
+      INFO("constraint: "); cst->print();
 
-         cst->bb->insertBefore(cst, mov);
+      if (cst->op == OP_SPLIT && 0) {
+         // spilling splits is annoying, just make sure they're separate
+         for (int d = 0; cst->defExists(d); ++d) {
+            if (!cst->getDef(d)->refCount())
+               continue;
+            LValue *lval = new_LValue(func, cst->def(d).getFile());
+            const uint8_t size = cst->def(d).getSize();
+            lval->reg.size = size;
+
+            mov = new_Instruction(func, OP_MOV, typeOfSize(size));
+            mov->setSrc(0, lval);
+            mov->setDef(0, cst->getDef(d));
+            cst->setDef(d, mov->getSrc(0));
+            cst->bb->insertAfter(cst, mov);
+
+            cst->getSrc(0)->asLValue()->noSpill = 1;
+            mov->getSrc(0)->asLValue()->noSpill = 1;
+         }
+      } else
+      if (cst->op == OP_MERGE) {
+         for (int s = 0; cst->srcExists(s); ++s) {
+            const uint8_t size = cst->src(s).getSize();
+            if (!cst->getSrc(s)->defs.size()) {
+               mov = new_Instruction(func, OP_NOP, typeOfSize(size));
+               mov->setDef(0, cst->getSrc(s));
+               cst->bb->insertBefore(cst, mov);
+               continue;
+            }
+            LValue *lval = new_LValue(func, cst->src(s).getFile());
+            lval->reg.size = size;
+
+            mov = new_Instruction(func, OP_MOV, typeOfSize(size));
+            mov->setDef(0, lval);
+            mov->setSrc(0, cst->getSrc(s));
+            cst->setSrc(s, mov->getDef(0));
+            cst->bb->insertBefore(cst, mov);
+
+            cst->getDef(0)->asLValue()->noSpill = 1; // doesn't help
+         }
       }
    }
+   prog->print();
    return true;
 }
 
