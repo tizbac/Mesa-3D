@@ -33,7 +33,6 @@ namespace nv50_ir {
 class RegisterSet
 {
 public:
-   RegisterSet();
    RegisterSet(const Target *);
 
    void init(const Target *);
@@ -42,7 +41,7 @@ public:
    void periodicMask(DataFile f, uint32_t lock, uint32_t unlock);
    void intersect(DataFile f, const RegisterSet *);
 
-   bool assign(DataFile f, unsigned int size, int32_t& reg);
+   bool assign(int32_t& reg, DataFile f, unsigned int size);
    void release(DataFile f, int32_t reg, unsigned int size);
    bool occupy(DataFile f, int32_t reg, unsigned int size);
    bool occupy(const Value *);
@@ -91,13 +90,6 @@ RegisterSet::reset(DataFile f, bool resetMax)
       fill[f] = -1;
 }
 
-RegisterSet::RegisterSet()
-{
-   memset(unit, 0, sizeof(unit));
-   memset(last, 0, sizeof(last));
-   memset(fill, 0, sizeof(fill));
-}
-
 void
 RegisterSet::init(const Target *targ)
 {
@@ -139,7 +131,7 @@ RegisterSet::print() const
 }
 
 bool
-RegisterSet::assign(DataFile f, unsigned int size, int32_t& reg)
+RegisterSet::assign(int32_t& reg, DataFile f, unsigned int size)
 {
    reg = bits[f].findFreeRange(size);
    if (reg < 0)
@@ -170,9 +162,7 @@ RegisterSet::occupy(DataFile f, int32_t reg, unsigned int size)
 
    INFO_DBG(0, REG_ALLOC, "reg occupy: %u[%i] %u\n", f, reg, size);
 
-   reg = reg + size - 1;
-   if (fill[f] < reg)
-      fill[f] = reg;
+   reg = MAX2(fill[f], (int32_t)(reg + size - 1));
 
    return true;
 }
@@ -228,7 +218,7 @@ private:
       void addConstraint(Instruction *, int s, int n);
       bool detectConflict(Instruction *, int s);
 
-      // target specific functions, TOOD: put in subclass or Target
+      // target specific functions, TODO: put in subclass or Target
       void texConstraintNV50(TexInstruction *);
       void texConstraintNVC0(TexInstruction *);
       void texConstraintNVE0(TexInstruction *);
@@ -255,7 +245,7 @@ typedef std::pair<Value *, Value *> ValuePair;
 class SpillCodeInserter
 {
 public:
-   SpillCodeInserter(Function *fn) : func(fn), stackSize(0), assignBase(0) { }
+   SpillCodeInserter(Function *fn) : func(fn), stackSize(0), stackBase(0) { }
    bool run(const std::list<ValuePair>&);
    Symbol *assignSlot(const Interval&, unsigned int size);
 
@@ -272,7 +262,7 @@ private:
    };
    std::list<SpillSlot> slots;
    int32_t stackSize;
-   int32_t assignBase;
+   int32_t stackBase;
 
    LValue *unspill(Instruction *usei, LValue *, Value *slot);
    void spill(Instruction *defi, Value *slot, LValue *);
@@ -600,8 +590,9 @@ public:
    GCRA(Function *, SpillCodeInserter&);
    ~GCRA();
 
-   bool allocateRegisters(ArrayList&);
-   void print() const;
+   bool allocateRegisters(ArrayList& insns);
+
+   void printNodeInfo() const;
 
 private:
    class RIG_Node : public Graph::Node
@@ -640,11 +631,12 @@ private:
 
       float weight;
 
+      // list pointers for simplify() phase
       RIG_Node *next;
       RIG_Node *prev;
 
-      // union of the live intervals of all coalesced values
-      // we want to retain the separate intervals for compound values
+      // union of the live intervals of all coalesced values (we want to retain
+      //  the separate intervals for testing interference of compound values)
       Interval livei;
 
       std::list<RIG_Node *> prefRegs;
@@ -691,7 +683,7 @@ private:
 
    RegisterSet regs;
 
-   // need to adjust register id for participants of OP_MERGE/SPLIT
+   // need to fixup register id for participants of OP_MERGE/SPLIT
    std::list<Instruction *> merges;
    std::list<Instruction *> splits;
 
@@ -707,15 +699,16 @@ GCRA::RIG_Node::RIG_Node() : Node(NULL), next(this), prev(this)
 }
 
 void
-GCRA::print() const
+GCRA::printNodeInfo() const
 {
    for (unsigned int i = 0; i < nodeCount; ++i) {
       if (!nodes[i].colors)
          continue;
-      INFO("NODE[%%%i]: %u colors, weight %f, reg %i\n",
+      INFO("RIG_Node[%%%i]($[%u]%i): %u colors, weight %f, deg %u/%u\n X",
            i,
-           nodes[i].colors,nodes[i].weight,nodes[i].reg);
-      INFO(" -><-");
+           nodes[i].f,nodes[i].reg,nodes[i].colors,
+           nodes[i].weight,
+           nodes[i].degree, nodes[i].degreeLimit);
 
       for (Graph::EdgeIterator ei = nodes[i].outgoing(); !ei.end(); ei.next())
          INFO(" %%%i", RIG_Node::get(ei)->getValue()->id);
@@ -742,9 +735,6 @@ GCRA::RIG_Node::init(const RegisterSet& regs, LValue *lval)
    degree = 0;
    degreeLimit = regs.getFileSize(lval->reg.file);
 
-   INFO("RIG_Node[%%%i]: colors = %u, reg = %i, f = %u, degLim = %u\n",
-        lval->id, colors, reg, f, degreeLimit);
-
    livei.insert(lval->livei);
 }
 
@@ -761,22 +751,13 @@ GCRA::coalesceValues(Value *dst, Value *src, bool force)
    RIG_Node *nRep = &nodes[rep->id];
    RIG_Node *nVal = &nodes[val->id];
 
-   INFO("%s: %%%i($r%i) %%%i($r%i)\n", __FUNCTION__,
-        rep->id, rep->reg.data.id,
-        val->id, val->reg.data.id);
-
    if (src->reg.file != dst->reg.file) {
-      INFO("file fail\n");
       if (!force)
          return false;
       WARN("forced coalescing of values in different files !\n");
    }
-   if (!force && dst->reg.size != src->reg.size) {
-      INFO("size fail\n");
+   if (!force && dst->reg.size != src->reg.size)
       return false;
-   }
-
-   INFO("joining %%%i($%i) <- %%%i\n", rep->id, rep->reg.data.id, val->id);
 
    if ((rep->reg.data.id >= 0) && (rep->reg.data.id != val->reg.data.id)) {
       if (force) {
@@ -785,7 +766,6 @@ GCRA::coalesceValues(Value *dst, Value *src, bool force)
       } else {
          if (val->reg.data.id >= 0)
             return false;
-         INFO("join of precolored with uncolored reg, checking ...\n");
          // make sure that there is no overlap with the fixed register of rep
          for (ArrayList::Iterator it = func->allLValues.iterator();
               !it.end(); it.next()) {
@@ -794,15 +774,14 @@ GCRA::coalesceValues(Value *dst, Value *src, bool force)
             if (reg->interfers(rep) && reg->livei.overlaps(nVal->livei))
                return false;
          }
-         INFO("no conflicts\n");
       }
    }
 
-   if (!force && nRep->livei.overlaps(nVal->livei)) {
-      INFO("overlap fail\n");
+   if (!force && nRep->livei.overlaps(nVal->livei))
       return false;
-   }
-   INFO("good\n");
+
+   INFO_DBG(prog->dbgFlags, REG_ALLOC, "joining %%%i($%i) <- %%%i\n",
+            rep->id, rep->reg.data.id, val->id);
 
    // set join pointer of all values joined with val
    for (Value::DefIterator def = val->defs.begin(); def != val->defs.end();
@@ -875,8 +854,6 @@ GCRA::makeCompound(Instruction *insn, bool split)
 {
    LValue *rep = (split ? insn->getSrc(0) : insn->getDef(0))->asLValue();
 
-   INFO("makeCompound(rep %%%i): ", rep->id); insn->print();
-
    const unsigned int size = getNode(rep)->colors;
    unsigned int base = 0;
 
@@ -893,7 +870,8 @@ GCRA::makeCompound(Instruction *insn, bool split)
       val->compMask &= makeCompMask(size, base, getNode(val)->colors);
       assert(val->compMask);
 
-      INFO("subval %%%i got mask: %x\n", val->id, val->compMask);
+      INFO_DBG(prog->dbgFlags, REG_ALLOC, "compound: %%%i:%x <- %%%i:%x\n",
+           rep->id, rep->compMask, val->id, val->compMask);
 
       base += getNode(val)->colors;
    }
@@ -950,13 +928,9 @@ GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
             break;
          i = insn->getSrc(0)->getUniqueInsn();
          insn->print();
-         INFO("MOV: should we join ?");
          if (i && !i->constrainedDefs()) {
-            INFO(" - yes\n");
             if (coalesceValues(insn->getDef(0), insn->getSrc(0), false))
                copyCompound(insn->getSrc(0), insn->getDef(0));
-         } else {
-            INFO(" - no\n");
          }
          break;
       case OP_TEX:
@@ -982,11 +956,6 @@ GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
 void
 GCRA::RIG_Node::addInterference(RIG_Node *node)
 {
-   /*
-   INFO("ADD_INTERFERENCE: %%%i XX %%%i\n", this->getValue()->id, node->getValue()->id);
-   this->livei.print();
-   node->livei.print();
-   */
    this->degree += relDegree[node->colors][colors];
    node->degree += relDegree[colors][node->colors];
 
@@ -1071,7 +1040,6 @@ GCRA::buildRIG(ArrayList& insns)
            it != active.end();
            ++it) {
          RIG_Node *node = *it;
-         INFO("RIG_Node: cur=%p, node=%p\n", cur, node);
 
          if (node->livei.end() <= cur->livei.begin()) {
             it = active.erase(it);
@@ -1095,9 +1063,7 @@ GCRA::calculateSpillWeights()
          continue;
       if (nodes[i].reg >= 0) {
          // update max reg
-         INFO("oldmax = %i\n", regs.getMaxAssigned(n->f));
          regs.occupy(n->f, n->reg, n->colors);
-         INFO("occup $r%i +%i -> %i\n", n->reg, n->colors, regs.getMaxAssigned(n->f));
          continue;
       }
       LValue *val = nodes[i].getValue();
@@ -1110,10 +1076,7 @@ GCRA::calculateSpillWeights()
             rc += (*it)->get()->refCount();
 
          nodes[i].weight = (float)rc * (float)rc / (float)nodes[i].livei.extent();
-
-         INFO("rc = %i, extent = %i\n", rc, nodes[i].livei.extent());
       }
-      INFO("WEIGHT[%%%i] = %f\n", val->id, nodes[i].weight);
 
       if (nodes[i].degree < nodes[i].degreeLimit) {
          int l = 0;
@@ -1125,7 +1088,7 @@ GCRA::calculateSpillWeights()
       }
    }
    if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
-      this->print();
+      printNodeInfo();
 }
 
 void
@@ -1133,17 +1096,18 @@ GCRA::simplifyEdge(RIG_Node *a, RIG_Node *b)
 {
    bool move = b->degree >= b->degreeLimit;
 
-   INFO("edge: (%%%i, %u) <-> (%%%i, degree %u/%u)\n", a->getValue()->id, a->degree, b->getValue()->id, b->degree, b->degreeLimit);
+   INFO_DBG(prog->dbgFlags, REG_ALLOC,
+            "edge: (%%%i, deg %u/%u) >-< (%%%i, deg %u/%u)\n",
+            a->getValue()->id, a->degree, a->degreeLimit,
+            b->getValue()->id, b->degree, b->degreeLimit);
 
    b->degree -= relDegree[a->colors][b->colors];
 
    move = move && b->degree < b->degreeLimit;
-   INFO("degree lowered to %u, move = %i\n", b->degree, move);
    if (move && !DLLIST_EMPTY(b)) {
       int l = (b->getValue()->reg.size > 4) ? 1 : 0;
       DLLIST_DEL(b);
       DLLIST_ADDTAIL(&lo[l], b);
-      INFO("moved %%%i to lo[%i]\n", b->getValue()->id, l);
    }
 }
 
@@ -1158,7 +1122,10 @@ GCRA::simplifyNode(RIG_Node *node)
 
    DLLIST_DEL(node);
    stack.push(node->getValue()->id);
-   INFO("pushed %%%i\n", node->getValue()->id);
+
+   INFO_DBG(prog->dbgFlags, REG_ALLOC, "SIMPLIFY: pushed %%%i%s\n",
+            node->getValue()->id,
+            (node->degree < node->degreeLimit) ? "" : "(spill)");
 }
 
 void
@@ -1167,12 +1134,10 @@ GCRA::simplify()
    for (;;) {
       if (!DLLIST_EMPTY(&lo[0])) {
          do {
-            INFO("%%%i is assignable (degree %u)\n", lo[0].next->getValue()->id, lo[0].next->degree);
             simplifyNode(lo[0].next);
          } while (!DLLIST_EMPTY(&lo[0]));
       } else
       if (!DLLIST_EMPTY(&lo[1])) {
-         INFO("%%%i is assignable (degree %u)\n", lo[1].next->getValue()->id, lo[1].next->degree);
          simplifyNode(lo[1].next);
       } else
       if (!DLLIST_EMPTY(&hi)) {
@@ -1181,7 +1146,6 @@ GCRA::simplify()
          // spill candidate
          for (RIG_Node *it = best->next; it != &hi; it = it->next) {
             float score = it->weight / (float)it->degree;
-            INFO("candidate %%%i: %f\n", it->getValue()->id, score);
             if (score < bestScore) {
                best = it;
                bestScore = score;
@@ -1189,10 +1153,8 @@ GCRA::simplify()
          }
          if (isinf(bestScore)) {
             ERROR("no viable spill candidates left\n");
-            assert(0);
             break;
          }
-         INFO("=== CHOSEN_TO_SPILL: %%%i\n", best->getValue()->id);
          simplifyNode(best);
       } else {
          break;
@@ -1205,17 +1167,12 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
 {
    const RIG_Node *intf = RIG_Node::get(ei);
 
-   //if (intf->reg < 0)
-   //   INFO("%%%i X %%%i: not reg assigned yet\n", node->getValue()->id, intf->getValue()->id);
-
    if (intf->reg < 0)
       return;
    const LValue *vA = node->getValue();
    const LValue *vB = intf->getValue();
 
-   //INFO("%%%i X assigned %%%i (reg %i..%i)\n", vA->id, vB->id, intf->reg, intf->reg + intf->colors - 1);
-   node->livei.print();
-   intf->livei.print();
+   const uint8_t intfMask = ((1 << intf->colors) - 1) << (intf->reg & 7);
 
    if (vA->compound | vB->compound) {
       // NOTE: this only works for >aligned< register tuples !
@@ -1225,7 +1182,8 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
          const LValue *vd = (*d)->get()->asLValue();
 
          if (!vD->livei.overlaps(vd->livei)) {
-            INFO("subDef %%%i X assigned %%%i: no overlap\n", vD->id, vd->id);
+            INFO_DBG(prog->dbgFlags, REG_ALLOC, "(%%%i) X (%%%i): no overlap\n",
+                     vD->id, vd->id);
             continue;
          }
 
@@ -1234,22 +1192,24 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
             assert(vB->compound);
             mask &= vd->compMask & vB->compMask;
          } else {
-            mask &= ((1 << intf->colors) - 1) << (intf->reg & 7);
+            mask &= intfMask;
          }
 
-         INFO("(%%%i)%x X (%%%i)%x & %x $r%i+%x\n",
-              vD->id,
-              vD->compound ? vD->compMask : 0xff,
-              vd->id,
-              vd->compound ? vd->compMask :
-              (((1 << intf->colors) - 1) << (intf->reg & 7)),
-              vB->compMask, intf->reg & ~7, mask);
+         INFO_DBG(prog->dbgFlags, REG_ALLOC,
+                  "(%%%i)%x X (%%%i)%x & %x: $r%i.%x\n",
+                  vD->id,
+                  vD->compound ? vD->compMask : 0xff,
+                  vd->id,
+                  vd->compound ? vd->compMask : intfMask,
+                  vB->compMask, intf->reg & ~7, mask);
          if (mask)
             regs.occupyMask(node->f, intf->reg & ~7, mask);
       }
       }
    } else {
-      INFO("normal interference %%%i ($r%i + %u)\n", vB->id, intf->reg, intf->colors);
+      INFO_DBG(prog->dbgFlags, REG_ALLOC,
+               "(%%%i) X (%%%i): $r%i + %u\n",
+               vA->id, vB->id, intf->reg, intf->colors);
       regs.occupy(node->f, intf->reg, intf->colors);
    }
 }
@@ -1257,13 +1217,17 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
 bool
 GCRA::selectRegisters()
 {
+   INFO_DBG(prog->dbgFlags, REG_ALLOC, "\nSELECT phase\n");
+
    while (!stack.empty()) {
       RIG_Node *node = &nodes[stack.top()];
       stack.pop();
 
       regs.reset(node->f);
 
-      INFO("testing interferences for %%%i (%u colors)\n", node->getValue()->id, node->colors);
+      INFO_DBG(prog->dbgFlags, REG_ALLOC, "\nNODE[%i, %u colors]\n",
+               node->getValue()->id, node->colors);
+
       for (Graph::EdgeIterator ei = node->outgoing(); !ei.end(); ei.next())
          checkInterference(node, ei);
       for (Graph::EdgeIterator ei = node->incident(); !ei.end(); ei.next())
@@ -1283,17 +1247,18 @@ GCRA::selectRegisters()
       if (node->reg >= 0)
          continue;
       LValue *lval = node->getValue();
-      INFO("assigning regs for %%%i (%u colors)\n", node->getValue()->id, node->colors);
-      regs.print();
-      bool ret = regs.assign(node->f, node->colors, node->reg);
-      INFO("assigned reg %i\n", node->reg);
+      if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
+         regs.print();
+      bool ret = regs.assign(node->reg, node->f, node->colors);
       if (ret) {
+         INFO_DBG(prog->dbgFlags, REG_ALLOC, "assigned reg %i\n", node->reg);
          lval->compMask = node->getCompMask();
       } else {
+         INFO_DBG(prog->dbgFlags, REG_ALLOC, "must spill: %%%i (size %u)\n",
+                  lval->id, lval->reg.size);
          Symbol *slot = NULL;
          if (lval->reg.file == FILE_GPR)
             slot = spill.assignSlot(node->livei, lval->reg.size);
-         INFO("MUST_SPILL: %%%i (size %u)\n", lval->id, lval->reg.size);
          mustSpill.push_back(ValuePair(lval, slot));
       }
    }
@@ -1313,7 +1278,8 @@ GCRA::allocateRegisters(ArrayList& insns)
 {
    bool ret;
 
-   INFO("allocateRegisters to %u instructions\n", insns.getSize());
+   INFO_DBG(prog->dbgFlags, REG_ALLOC,
+            "allocateRegisters to %u instructions\n", insns.getSize());
 
    nodeCount = func->allLValues.getSize();
    nodes = new RIG_Node[nodeCount];
@@ -1342,17 +1308,13 @@ GCRA::allocateRegisters(ArrayList& insns)
    simplify();
 
    ret = selectRegisters();
-   INFO("selectRegisters %s\n", ret ? "succeeded" : "failed");
    if (!ret) {
-      INFO("inserting spill code ...\n");
-      for (std::list<ValuePair>::iterator it = mustSpill.begin();
-           it != mustSpill.end(); ++it)
-         INFO("TO_SPILL: %%%i -> l[%x]\n",
-              it->first->id, it->second->reg.data.offset);
+      INFO_DBG(prog->dbgFlags, REG_ALLOC,
+               "selectRegisters failed, inserting spill code ...\n");
       regs.reset(FILE_GPR, true);
       spill.run(mustSpill);
-      INFO("done\n");
-      prog->print();
+      if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
+         func->print();
    } else {
       prog->maxGPR = regs.getMaxAssigned(FILE_GPR);
    }
@@ -1402,16 +1364,13 @@ Symbol *
 SpillCodeInserter::assignSlot(const Interval &livei, unsigned int size)
 {
    SpillSlot slot;
-   const int32_t base = assignBase + (size - (assignBase % size));
+   const int32_t base = stackBase + (size - (stackBase % size));
    int32_t offset;
    std::list<SpillSlot>::iterator pos = slots.end(), it = slots.begin();
 
    slot.sym = NULL;
 
-   INFO("assign slot[%u bytes] in stack(%u:%u) to livei: ", size, assignBase, stackSize); livei.print();
-
    for (offset = base; offset < stackSize; offset += size) {
-      INFO("going to offset %u\n", offset);
       while (it != slots.end() && it->offset < offset)
          ++it;
       if (it == slots.end()) // no slots left
@@ -1419,28 +1378,22 @@ SpillCodeInserter::assignSlot(const Interval &livei, unsigned int size)
       std::list<SpillSlot>::iterator bgn = it;
 
       while (it != slots.end() && it->offset < (offset + size)) {
-         INFO("checking for overlap: l[%x]\n", it->sym->reg.data.offset);
          it->occup.print();
          if (it->occup.overlaps(livei))
             break;
          ++it;
-         INFO("-\n");
       }
       if (it == slots.end() || it->offset >= (offset + size)) {
-         INFO("fits, adding livei\n");
          // fits
          for (; bgn != slots.end() && bgn->offset < (offset + size); ++bgn) {
             bgn->occup.insert(livei);
-            if (bgn->size() == size) {
+            if (bgn->size() == size)
                slot.sym = bgn->sym;
-               INFO("sizefit: %x/%x\n", bgn->offset, slot.sym->reg.data.offset);
-            }
          }
          break;
       }
    }
    if (!slot.sym) {
-      INFO("no fit, new sym at %x\n", offset);
       stackSize = offset + size;
       slot.offset = offset;
       slot.sym = new_Symbol(func->getProgram(), FILE_MEMORY_LOCAL);
@@ -1541,10 +1494,9 @@ SpillCodeInserter::run(const std::list<ValuePair>& lst)
 
    }
 
-   INFO("done all spills\n");
    // TODO: We're not trying to reuse old slots in a potential next iteration.
    //  We have to update the slots' livei intervals to be able to do that.
-   assignBase = stackSize;
+   stackBase = stackSize;
    slots.clear();
    return true;
 }
@@ -1575,10 +1527,6 @@ RegAlloc::execFunc()
    unsigned int i, retries;
    bool ret;
 
-   // Prevent TEMPs in shaders' main() from counting as live outputs.
-   if (func == prog->main && prog->getType() != Program::TYPE_COMPUTE)
-      func->outs.resize(0);
-
    ret = insertConstr.exec(func);
    if (!ret)
       goto out;
@@ -1593,33 +1541,26 @@ RegAlloc::execFunc()
 
    // XXX: need to fix up spill slot usage ranges to support > 1 retry
    for (retries = 0; retries < 3; ++retries) {
-      INFO("try %u\n", retries);
+      if (retries && (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC))
+         INFO("Retry: %i\n", retries);
       // spilling to registers may add live ranges, need to rebuild everything
       ret = true;
       for (sequence = func->cfg.nextSequence(), i = 0;
            ret && i <= func->loopNestingBound;
            sequence = func->cfg.nextSequence(), ++i)
          ret = buildLiveSets(BasicBlock::get(func->cfg.getRoot()));
-      if (!ret) {
-         INFO("failed to build live sets\n");
+      if (!ret)
          break;
-      }
-      INFO("ordering instructions ...\n");
       func->orderInstructions(this->insns);
-      INFO("instructions ordered\n");
 
-      INFO("building intervals ...\n");
       ret = buildIntervals.run(func);
       if (!ret)
          break;
-      INFO("built intervals ... re-running GCRA\n");
       ret = gcra.allocateRegisters(insns);
       if (ret)
          break; // success
-      if (!ret)
-         INFO("Allocation failed ! Retrying ...\n");
    }
-   INFO("RA done\n");
+   INFO_DBG(prog->dbgFlags, REG_ALLOC, "RegAlloc done: %i\n", ret);
 
 out:
    return ret;
@@ -1629,18 +1570,10 @@ out:
 void
 GCRA::resolveSplitsAndMerges()
 {
-   INFO("resolving splits and merges\n");
-
-   for (std::list<Instruction *>::iterator it = splits.begin();
-        it != splits.end(); ++it) {
-      INFO("SPLIT list: (%p) ", *it); (*it)->print();
-   }
-
    for (std::list<Instruction *>::iterator it = splits.begin();
         it != splits.end();
         ++it) {
       Instruction *split = *it;
-      INFO("SPLIT(%p):\n", split); split->print();
       int reg = split->getSrc(0)->reg.data.id;
       for (int d = 0; split->defExists(d); ++d) {
          Value *v = split->getDef(d);
@@ -1649,7 +1582,6 @@ GCRA::resolveSplitsAndMerges()
          reg += regs.sizeToId(v->reg.file, v->reg.size);
       }
       delete_Instruction(prog, split);
-      INFO("  del'd\n");
    }
    splits.clear();
 
@@ -1657,7 +1589,6 @@ GCRA::resolveSplitsAndMerges()
         it != merges.end();
         ++it) {
       Instruction *merge = *it;
-      INFO("MERGE(%p):\n", merge); merge->print();
       int reg = merge->getDef(0)->reg.data.id;
       for (int s = 0; merge->srcExists(s); ++s) {
          Value *v = merge->getSrc(s);
@@ -1666,7 +1597,6 @@ GCRA::resolveSplitsAndMerges()
          reg += regs.sizeToId(v->reg.file, v->reg.size);
       }
       delete_Instruction(prog, merge);
-      INFO("  del'd\n");
    }
    merges.clear();
 }
@@ -1816,7 +1746,6 @@ RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
    uint8_t size = 0;
    if (a >= b)
       return;
-   INFO("%s(%i, %i) ", __FUNCTION__, a, b); insn->print();
    for (int s = a; s <= b; ++s)
       size += insn->getSrc(s)->reg.size;
    if (!size)
@@ -1826,9 +1755,7 @@ RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
 
    Instruction *merge = new_Instruction(func, OP_MERGE, typeOfSize(size));
    merge->setDef(0, lval);
-   INFO("srcs %i .. %i\n", a, b);
    for (int s = a, i = 0; s <= b; ++s, ++i) {
-      INFO("merge->setSrc(%i, %%%i)\n", s, insn->getSrc(s) ? insn->getSrc(s)->id : -1);
       merge->setSrc(i, insn->getSrc(s));
       insn->setSrc(s, NULL);
    }
@@ -1841,7 +1768,6 @@ RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
    insn->bb->insertBefore(insn, merge);
 
    constrList.push_back(merge);
-   INFO("MERGED: "); merge->print();
 }
 
 void
@@ -1969,14 +1895,11 @@ RegAlloc::InsertConstraintsPass::visit(BasicBlock *bb)
 bool
 RegAlloc::InsertConstraintsPass::insertConstraintMoves()
 {
-   INFO("inserting constraint moves for %lu constraints\n", constrList.size());
    for (std::list<Instruction *>::iterator it = constrList.begin();
         it != constrList.end();
         ++it) {
       Instruction *cst = *it;
       Instruction *mov;
-
-      INFO("constraint: "); cst->print();
 
       if (cst->op == OP_SPLIT && 0) {
          // spilling splits is annoying, just make sure they're separate

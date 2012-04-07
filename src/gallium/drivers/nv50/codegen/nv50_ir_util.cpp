@@ -356,7 +356,7 @@ int BitSet::findFreeRange(unsigned int count) const
       else
          count = 32;
 
-      for (i = 0; i < (size + 31) / 32; ++i) {
+      for (i = 0; i < end; ++i) {
          if (data[i] != 0xffffffff) {
             for (pos = 0; pos < 32; pos += count)
                if (!(data[i] & (m << pos)))
