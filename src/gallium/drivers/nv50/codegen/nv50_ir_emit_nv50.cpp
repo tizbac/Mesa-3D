@@ -392,6 +392,7 @@ CodeEmitterNV50::setSrcFileBits(const Instruction *i, int enc)
       break;
    case 0x08: // rcr
       code[0] |= (enc == NV50_OP_ENC_LONG_ALT) ? 0x01000000 : 0x00800000;
+      code[1] |= (i->getSrc(1)->reg.fileIndex << 22);
       break;
    case 0x09: // acr/gcr
       if (progType == Program::TYPE_GEOMETRY) {
@@ -400,13 +401,15 @@ CodeEmitterNV50::setSrcFileBits(const Instruction *i, int enc)
          code[0] |= (enc == NV50_OP_ENC_LONG_ALT) ? 0x01000000 : 0x00800000;
          code[1] |= 0x00200000;
       }
+      code[1] |= (i->getSrc(1)->reg.fileIndex << 22);
       break;
    case 0x20: // rrc
       code[0] |= 0x01000000;
+      code[1] |= (i->getSrc(2)->reg.fileIndex << 22);
       break;
    case 0x21: // arc
       code[0] |= 0x01000000;
-      code[1] |= 0x00200000;
+      code[1] |= 0x00200000 | (i->getSrc(2)->reg.fileIndex << 22);
       assert(progType != Program::TYPE_GEOMETRY);
       break;
    default:
@@ -444,9 +447,8 @@ CodeEmitterNV50::setSrc(const Instruction *i, unsigned int s, int slot)
       return;
    const Storage *reg = &i->src(s).rep()->reg;
 
-   int unit = std::min((int)reg->size, 4);
    unsigned int id = (reg->file == FILE_GPR) ?
-      reg->data.id * reg->size / unit :
+      reg->data.id :
       reg->data.offset >> (reg->size >> 1); // no > 4 byte sources here
 
    switch (slot) {
@@ -1621,7 +1623,7 @@ CodeEmitterNV50::emitInstruction(Instruction *insn)
       ERROR("operation should have been lowered\n");
       return false;
    default:
-      ERROR("unknown op\n");
+      ERROR("unknown op: %u\n", insn->op);
       return false;
    }
    if (insn->join || insn->op == OP_JOIN)
