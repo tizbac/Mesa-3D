@@ -49,7 +49,12 @@ public:
 
    inline int getMaxAssigned(DataFile f) const { return fill[f]; }
 
-   inline unsigned int getFileSize(DataFile f) const { return last[f] + 1; }
+   inline unsigned int getFileSize(DataFile f, uint8_t regSize) const
+   {
+      if (restrictedGPR16Range && f == FILE_GPR && regSize == 2)
+         return (last[f] + 1) / 2;
+      return last[f] + 1;
+   }
 
    inline unsigned int units(DataFile f, uint8_t size) const
    {
@@ -80,6 +85,8 @@ private:
 
    int last[LAST_REGISTER_FILE + 1];
    int fill[LAST_REGISTER_FILE + 1];
+
+   const bool restrictedGPR16Range;
 };
 
 void
@@ -104,6 +111,7 @@ RegisterSet::init(const Target *targ)
 }
 
 RegisterSet::RegisterSet(const Target *targ)
+  : restrictedGPR16Range(targ->getChipset() < 0xc0)
 {
    init(targ);
    for (unsigned int i = 0; i <= LAST_REGISTER_FILE; ++i)
@@ -733,7 +741,7 @@ GCRA::RIG_Node::init(const RegisterSet& regs, LValue *lval)
 
    weight = std::numeric_limits<float>::infinity();
    degree = 0;
-   degreeLimit = regs.getFileSize(lval->reg.file);
+   degreeLimit = regs.getFileSize(f, lval->reg.size);
 
    livei.insert(lval->livei);
 }
@@ -854,6 +862,11 @@ GCRA::makeCompound(Instruction *insn, bool split)
 {
    LValue *rep = (split ? insn->getSrc(0) : insn->getDef(0))->asLValue();
 
+   if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC) {
+      INFO("makeCompound(split = %i): ", split);
+      insn->print();
+   }
+
    const unsigned int size = getNode(rep)->colors;
    unsigned int base = 0;
 
@@ -902,12 +915,13 @@ GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
       case OP_MERGE:
          if (!(mask & JOIN_MASK_UNION))
             break;
-         if (insn->op == OP_MERGE)
-            merges.push_back(insn);
          for (c = 0; insn->srcExists(c); ++c)
             coalesceValues(insn->getDef(0), insn->getSrc(c), true);
-         if (insn->srcExists(1))
-            makeCompound(insn, false);
+         if (insn->op == OP_MERGE) {
+            merges.push_back(insn);
+            if (insn->srcExists(1))
+               makeCompound(insn, false);
+         }
          break;
       case OP_SPLIT:
          if (!(mask & JOIN_MASK_UNION))
@@ -1195,7 +1209,7 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
          }
 
          INFO_DBG(prog->dbgFlags, REG_ALLOC,
-                  "(%%%i)%x X (%%%i)%x & %x: $r%i.%x\n",
+                  "(%%%i)%02x X (%%%i)%02x & %02x: $r%i.%02x\n",
                   vD->id,
                   vD->compound ? vD->compMask : 0xff,
                   vd->id,
@@ -1297,10 +1311,8 @@ GCRA::allocateRegisters(ArrayList& insns)
    if (!ret)
       goto out;
 
-   if (func->getProgram()->dbgFlags & NV50_IR_DEBUG_REG_ALLOC) {
-      func->print();
+   if (func->getProgram()->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
       func->printLiveIntervals();
-   }
 
    buildRIG(insns);
    calculateSpillWeights();
@@ -1538,10 +1550,13 @@ RegAlloc::execFunc()
    if (!ret)
       goto out;
 
-   // XXX: need to fix up spill slot usage ranges to support > 1 retry
+   // TODO: need to fix up spill slot usage ranges to support > 1 retry
    for (retries = 0; retries < 3; ++retries) {
       if (retries && (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC))
          INFO("Retry: %i\n", retries);
+      if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
+         func->print();
+
       // spilling to registers may add live ranges, need to rebuild everything
       ret = true;
       for (sequence = func->cfg.nextSequence(), i = 0;
