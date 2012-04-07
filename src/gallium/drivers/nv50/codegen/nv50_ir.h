@@ -140,6 +140,7 @@ enum operation
 #define NV50_IR_SUBOP_LDC_IS       2
 #define NV50_IR_SUBOP_LDC_ISL      3
 #define NV50_IR_SUBOP_SHIFT_WRAP   1
+#define NV50_IR_SUBOP_EMU_PRERET   1
 
 enum DataType
 {

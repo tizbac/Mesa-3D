@@ -553,8 +553,11 @@ void Instruction::init()
    subOp = 0;
 
    saturate = 0;
-   join = terminator = 0;
-   ftz = dnz = 0;
+   join = 0;
+   exit = 0;
+   terminator = 0;
+   ftz = 0;
+   dnz = 0;
    atomic = 0;
    perPatch = 0;
    fixed = 0;
@@ -1082,6 +1085,7 @@ nv50_ir_generate_code(struct nv50_ir_prog_info *info)
    if (prog->dbgFlags & NV50_IR_DEBUG_VERBOSE)
       prog->print();
 
+   targ->parseDriverInfo(info);
    prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_PRE_SSA);
 
    prog->convertToSSA();
