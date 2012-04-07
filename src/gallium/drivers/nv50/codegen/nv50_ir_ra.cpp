@@ -927,7 +927,6 @@ GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
          if (i && i->op == OP_MERGE) // do we really still need this ?
             break;
          i = insn->getSrc(0)->getUniqueInsn();
-         insn->print();
          if (i && !i->constrainedDefs()) {
             if (coalesceValues(insn->getDef(0), insn->getSrc(0), false))
                copyCompound(insn->getSrc(0), insn->getDef(0));
@@ -1942,7 +1941,7 @@ RegAlloc::InsertConstraintsPass::insertConstraintMoves()
          }
       }
    }
-   prog->print();
+
    return true;
 }
 
