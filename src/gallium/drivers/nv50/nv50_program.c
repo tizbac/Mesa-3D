@@ -85,8 +85,8 @@ nv50_vertprog_assign_slots(struct nv50_ir_prog_info *info)
       case TGSI_SEMANTIC_PSIZE:
          prog->vp.psiz = i;
          break;
-      case NV50_SEMANTIC_CLIPDISTANCE:
-         prog->vp.clpd = i;
+      case TGSI_SEMANTIC_CLIPDIST:
+         prog->vp.clpd = n;
          break;
       case TGSI_SEMANTIC_EDGEFLAG:
          prog->vp.edgeflag = i;
