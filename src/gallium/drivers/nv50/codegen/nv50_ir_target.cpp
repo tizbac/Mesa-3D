@@ -267,6 +267,10 @@ Program::emitBinary(struct nv50_ir_prog_info *info)
 
    emitSymbolTable(info);
 
+   // the nvc0 driver will print the binary iself together with the header
+   if ((dbgFlags & NV50_IR_DEBUG_BASIC) && getTarget()->getChipset() < 0xc0)
+      emit->printBinary();
+
    delete emit;
    return true;
 }
