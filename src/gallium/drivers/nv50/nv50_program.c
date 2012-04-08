@@ -86,7 +86,7 @@ nv50_vertprog_assign_slots(struct nv50_ir_prog_info *info)
          prog->vp.psiz = i;
          break;
       case TGSI_SEMANTIC_CLIPDIST:
-         prog->vp.clpd = n;
+         prog->vp.clpd[info->out[i].si] = n;
          break;
       case TGSI_SEMANTIC_EDGEFLAG:
          prog->vp.edgeflag = i;
@@ -260,6 +260,8 @@ nv50_program_translate(struct nv50_program *prog, uint16_t chipset)
 
    prog->vp.bfc[0] = 0x80;
    prog->vp.bfc[1] = 0x80;
+   prog->vp.clpd[0] = 0x80;
+   prog->vp.clpd[1] = 0x80;
    prog->vp.psiz = 0x80;
    prog->vp.edgeflag = 0x80;
    prog->gp.primid = 0x80;

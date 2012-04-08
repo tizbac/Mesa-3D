@@ -367,7 +367,7 @@ nv50_fp_linkage_validate(struct nv50_context *nv50)
    m = nv50_vec4_map(map, 0, lin, &dummy, &vp->out[0]);
 
    for (c = 0; c < vp->vp.clpd_nr; ++c)
-      map[m++] = vp->vp.clpd + c;
+      map[m++] = vp->vp.clpd[c / 4] + (c % 4);
 
    colors |= m << 8; /* adjust BFC0 id */
 
