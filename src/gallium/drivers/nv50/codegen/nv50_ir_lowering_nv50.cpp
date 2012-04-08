@@ -280,6 +280,8 @@ NV50LegalizeSSA::propagateWriteToOutput(Instruction *st)
    // check def instruction can store
    Instruction *di = st->getSrc(1)->defs.front()->getInsn();
 
+   if (di->isPseudo()) // TODO: move exports (if beneficial) in common opt pass
+      return;
    for (int s = 0; di->srcExists(s); ++s)
       if (di->src(s).getFile() == FILE_IMMEDIATE)
          return;
