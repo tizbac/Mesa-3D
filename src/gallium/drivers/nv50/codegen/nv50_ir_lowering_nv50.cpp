@@ -126,8 +126,22 @@ private:
 bool
 NV50LegalizePostRA::visit(Function *fn)
 {
+   Program *prog = fn->getProgram();
+
    r63 = new_LValue(fn, FILE_GPR);
    r63->reg.data.id = 63;
+
+   // this is actually per-program, but we can do it all on visiting main()
+   std::list<Instruction *> *outWrites =
+      reinterpret_cast<std::list<Instruction *> *>(prog->targetPriv);
+
+   if (outWrites) {
+      for (std::list<Instruction *>::iterator it = outWrites->begin();
+           it != outWrites->end(); ++it)
+         (*it)->getSrc(1)->defs.front()->getInsn()->setDef(0, (*it)->getSrc(0));
+      // instructions will be deleted on exit
+      outWrites->clear();
+   }
 
    return true;
 }
@@ -240,17 +254,30 @@ private:
    inline bool isARL(const Instruction *) const;
 
    BuildUtil bld;
+
+   std::list<Instruction *> *outWrites;
 };
 
 NV50LegalizeSSA::NV50LegalizeSSA(Program *prog)
 {
    bld.setProgram(prog);
+
+   if (prog->optLevel >= 2 &&
+       (prog->getType() == Program::TYPE_GEOMETRY ||
+        prog->getType() == Program::TYPE_VERTEX))
+      outWrites =
+         reinterpret_cast<std::list<Instruction *> *>(prog->targetPriv);
 }
 
 void
 NV50LegalizeSSA::propagateWriteToOutput(Instruction *st)
 {
-   // TODO
+   // we cannot set defs to non-lvalues before register allocation, so
+   // save and remove (to save registers) the exports and replace later
+   if (!st->src(0).isIndirect(0) && st->getSrc(1)->refCount() == 1) {
+      outWrites->push_back(st);
+      st->bb->remove(st);
+   }
 }
 
 bool
@@ -394,7 +421,8 @@ NV50LegalizeSSA::visit(BasicBlock *bb)
 
       switch (insn->op) {
       case OP_EXPORT:
-         propagateWriteToOutput(insn);
+         if (outWrites)
+            propagateWriteToOutput(insn);
          break;
       case OP_DIV:
          handleDIV(insn);
@@ -1003,19 +1031,25 @@ NV50LoweringPreSSA::visit(Instruction *i)
 bool
 TargetNV50::runLegalizePass(Program *prog, CGStage stage) const
 {
+   bool ret = false;
+
    if (stage == CG_STAGE_PRE_SSA) {
       NV50LoweringPreSSA pass(prog);
-      return pass.run(prog, false, true);
+      ret = pass.run(prog, false, true);
    } else
    if (stage == CG_STAGE_SSA) {
+      if (!prog->targetPriv)
+         prog->targetPriv = new std::list<Instruction *>();
       NV50LegalizeSSA pass(prog);
-      return pass.run(prog, false, true);
+      ret = pass.run(prog, false, true);
    } else
    if (stage == CG_STAGE_POST_RA) {
       NV50LegalizePostRA pass;
-      return pass.run(prog, false, true);
+      ret = pass.run(prog, false, true);
+      if (prog->targetPriv)
+         delete reinterpret_cast<std::list<Instruction *> *>(prog->targetPriv);
    }
-   return false;
+   return ret;
 }
 
 } // namespace nv50_ir

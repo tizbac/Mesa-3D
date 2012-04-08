@@ -1058,6 +1058,9 @@ public:
    MemoryPool mem_ImmediateValue;
 
    uint32_t dbgFlags;
+   uint8_t  optLevel;
+
+   void *targetPriv; // e.g. to carry information between passes
 
    void releaseInstruction(Instruction *);
    void releaseValue(Value *);

@@ -1018,6 +1018,8 @@ GCRA::checkList(std::list<RIG_Node *>& lst)
 void
 GCRA::insertOrderedTail(std::list<RIG_Node *>& list, RIG_Node *node)
 {
+   if (node->livei.isEmpty())
+      return;
    // only the intervals of joined values don't necessarily arrive in order
    std::list<RIG_Node *>::iterator prev, it;
    for (it = list.end(); it != list.begin(); it = prev) {

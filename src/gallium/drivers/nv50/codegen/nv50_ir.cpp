@@ -964,6 +964,9 @@ Program::Program(Type type, Target *arch)
    calls.insert(&main->call);
 
    dbgFlags = 0;
+   optLevel = 0;
+
+   targetPriv = NULL;
 }
 
 Program::~Program()
@@ -1065,6 +1068,7 @@ nv50_ir_generate_code(struct nv50_ir_prog_info *info)
    if (!prog)
       return -1;
    prog->dbgFlags = info->dbgFlags;
+   prog->optLevel = info->optLevel;
 
    switch (info->bin.sourceRep) {
 #if 0
