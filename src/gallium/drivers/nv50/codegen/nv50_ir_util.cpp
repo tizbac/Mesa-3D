@@ -333,7 +333,7 @@ int BitSet::findFreeRange(unsigned int count) const
          }
       }
    } else
-   if (count == 4) {
+   if (count == 4 || count == 3) {
       for (i = 0; i < end; ++i) {
          if (data[i] != 0xffffffff) {
             uint32_t b =
@@ -345,13 +345,10 @@ int BitSet::findFreeRange(unsigned int count) const
          }
       }
    } else {
-      if (count < 4)
-         count = 4;
-      else
-      if (count < 8)
+      if (count <= 8)
          count = 8;
       else
-      if (count < 16)
+      if (count <= 16)
          count = 16;
       else
          count = 32;

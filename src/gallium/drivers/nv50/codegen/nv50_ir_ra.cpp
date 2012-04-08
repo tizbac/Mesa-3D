@@ -219,7 +219,7 @@ private:
       bool insertConstraintMoves();
 
       void condenseDefs(Instruction *);
-      void condenseSrcs(Instruction *, int first, int last);
+      void condenseSrcs(Instruction *, const int first, const int last);
 
       void addHazard(Instruction *i, const ValueRef *src);
       void textureMask(TexInstruction *);
@@ -1240,7 +1240,7 @@ GCRA::selectRegisters()
 
       regs.reset(node->f);
 
-      INFO_DBG(prog->dbgFlags, REG_ALLOC, "\nNODE[%i, %u colors]\n",
+      INFO_DBG(prog->dbgFlags, REG_ALLOC, "\nNODE[%%%i, %u colors]\n",
                node->getValue()->id, node->colors);
 
       for (Graph::EdgeIterator ei = node->outgoing(); !ei.end(); ei.next())
@@ -1281,7 +1281,7 @@ GCRA::selectRegisters()
       return false;
    for (unsigned int i = 0; i < nodeCount; ++i) {
       LValue *lval = nodes[i].getValue();
-      if (nodes[i].colors > 0)
+      if (nodes[i].reg >= 0 && nodes[i].colors > 0)
          lval->reg.data.id =
             regs.rbyte(nodes[i].f, nodes[i].reg) / MIN2(lval->reg.size, 4);
    }
@@ -1752,12 +1752,15 @@ RegAlloc::InsertConstraintsPass::condenseDefs(Instruction *insn)
       insn->setDef(k, insn->getDef(d));
       insn->setDef(d, NULL);
    }
-   insn->bb->insertAfter(insn, split);
+   // carry over predicate if any (mainly for OP_UNION uses)
+   split->setPredicate(insn->cc, insn->getPredicate());
 
+   insn->bb->insertAfter(insn, split);
    constrList.push_back(split);
 }
 void
-RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
+RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn,
+                                              const int a, const int b)
 {
    uint8_t size = 0;
    if (a >= b)
@@ -1768,6 +1771,9 @@ RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
       return;
    LValue *lval = new_LValue(func, FILE_GPR);
    lval->reg.size = size;
+
+   Value *save[3];
+   insn->takeExtraSources(0, save);
 
    Instruction *merge = new_Instruction(func, OP_MERGE, typeOfSize(size));
    merge->setDef(0, lval);
@@ -1782,6 +1788,8 @@ RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn, int a, int b)
       insn->setSrc(s, NULL);
    }
    insn->bb->insertBefore(insn, merge);
+
+   insn->putExtraSources(0, save);
 
    constrList.push_back(merge);
 }
@@ -1850,11 +1858,10 @@ RegAlloc::InsertConstraintsPass::texConstraintNV50(TexInstruction *tex)
       if (!tex->defExists(c))
          tex->setDef(c, new_LValue(func, tex->getDef(0)->asLValue()));
    }
-   condenseDefs(tex);
-   condenseSrcs(tex, 0, c - 1);
-
    if (pred)
       tex->setPredicate(tex->cc, pred);
+   condenseDefs(tex);
+   condenseSrcs(tex, 0, c - 1);
 }
 
 // Insert constraint markers for instructions whose multiple sources must be
@@ -1901,6 +1908,9 @@ RegAlloc::InsertConstraintsPass::visit(BasicBlock *bb)
          condenseDefs(i);
          if (i->src(0).isIndirect(0) && typeSizeof(i->dType) >= 8)
             addHazard(i, i->src(0).getIndirect(0));
+      } else
+      if (i->op == OP_UNION) {
+         constrList.push_back(i);
       }
    }
    return true;
@@ -1936,15 +1946,23 @@ RegAlloc::InsertConstraintsPass::insertConstraintMoves()
             mov->getSrc(0)->asLValue()->noSpill = 1;
          }
       } else
-      if (cst->op == OP_MERGE) {
+      if (cst->op == OP_MERGE || cst->op == OP_UNION) {
          for (int s = 0; cst->srcExists(s); ++s) {
             const uint8_t size = cst->src(s).getSize();
+
             if (!cst->getSrc(s)->defs.size()) {
                mov = new_Instruction(func, OP_NOP, typeOfSize(size));
                mov->setDef(0, cst->getSrc(s));
                cst->bb->insertBefore(cst, mov);
                continue;
             }
+            assert(cst->getSrc(s)->defs.size() == 1); // still SSA
+
+            Instruction *defi = cst->getSrc(s)->defs.front()->getInsn();
+            // catch some cases where don't really need MOVs
+            if (cst->getSrc(s)->refCount() == 1 && !defi->constrainedDefs())
+               continue;
+
             LValue *lval = new_LValue(func, cst->src(s).getFile());
             lval->reg.size = size;
 
@@ -1955,6 +1973,9 @@ RegAlloc::InsertConstraintsPass::insertConstraintMoves()
             cst->bb->insertBefore(cst, mov);
 
             cst->getDef(0)->asLValue()->noSpill = 1; // doesn't help
+
+            if (cst->op == OP_UNION)
+               mov->setPredicate(defi->cc, defi->getPredicate());
          }
       }
    }
