@@ -267,17 +267,27 @@ NV50LegalizeSSA::NV50LegalizeSSA(Program *prog)
         prog->getType() == Program::TYPE_VERTEX))
       outWrites =
          reinterpret_cast<std::list<Instruction *> *>(prog->targetPriv);
+   else
+      outWrites = NULL;
 }
 
 void
 NV50LegalizeSSA::propagateWriteToOutput(Instruction *st)
 {
-   // we cannot set defs to non-lvalues before register allocation, so
-   // save and remove (to save registers) the exports and replace later
-   if (!st->src(0).isIndirect(0) && st->getSrc(1)->refCount() == 1) {
-      outWrites->push_back(st);
-      st->bb->remove(st);
-   }
+   if (st->src(0).isIndirect(0) || st->getSrc(1)->refCount() != 1)
+      return;
+
+   // check def instruction can store
+   Instruction *di = st->getSrc(1)->defs.front()->getInsn();
+
+   for (int s = 0; di->srcExists(s); ++s)
+      if (di->src(s).getFile() == FILE_IMMEDIATE)
+         return;
+
+   // We cannot set defs to non-lvalues before register allocation, so
+   // save & remove (to save registers) the exports and replace later.
+   outWrites->push_back(st);
+   st->bb->remove(st);
 }
 
 bool
