@@ -296,9 +296,14 @@ CodeEmitterNV50::setImmediate(const Instruction *i, int s)
    const ImmediateValue *imm = i->src(s).get()->asImm();
    assert(imm);
 
+   uint32_t u = imm->reg.data.u32;
+
+   if (i->src(s).mod & Modifier(NV50_IR_MOD_NOT))
+      u = ~u;
+
    code[1] |= 3;
-   code[0] |= (imm->reg.data.u32 & 0x3f) << 16;
-   code[1] |= (imm->reg.data.u32 >> 6) << 2;
+   code[0] |= (u & 0x3f) << 16;
+   code[1] |= (u >> 6) << 2;
 }
 
 void
@@ -1240,6 +1245,11 @@ CodeEmitterNV50::emitLogicOp(const Instruction *i)
          assert(0);
          break;
       }
+      if (i->src(0).mod & Modifier(NV50_IR_MOD_NOT))
+         code[1] |= 1 << 16;
+      if (i->src(1).mod & Modifier(NV50_IR_MOD_NOT))
+         code[1] |= 1 << 17;
+
       emitForm_MAD(i);
    }
 }
