@@ -245,6 +245,12 @@ LValue::LValue(Function *fn, LValue *lval)
    reg.size = lval->reg.size;
    reg.data.id = -1;
 
+   compMask = 0;
+   compound = 0;
+   ssa = 0;
+   fixedReg = 0;
+   noSpill = 0;
+
    fn->add(this, this->id);
 }
 
