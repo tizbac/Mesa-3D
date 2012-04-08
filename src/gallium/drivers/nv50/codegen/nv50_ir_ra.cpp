@@ -170,7 +170,7 @@ RegisterSet::occupy(DataFile f, int32_t reg, unsigned int size)
 
    INFO_DBG(0, REG_ALLOC, "reg occupy: %u[%i] %u\n", f, reg, size);
 
-   reg = MAX2(fill[f], (int32_t)(reg + size - 1));
+   fill[f] = MAX2(fill[f], (int32_t)(reg + size - 1));
 
    return true;
 }
@@ -1302,9 +1302,10 @@ GCRA::allocateRegisters(ArrayList& insns)
       return false;
    for (unsigned int i = 0; i < nodeCount; ++i) {
       LValue *lval = reinterpret_cast<LValue *>(func->allLValues.get(i));
-      nodes[i].init(regs, lval);
-      if (!lval->livei.isEmpty())
+      if (lval) {
+         nodes[i].init(regs, lval);
          RIG.insert(&nodes[i]);
+      }
    }
 
    // coalesce first, we use only 1 RIG node for a group of joined values
