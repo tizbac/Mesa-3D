@@ -552,6 +552,7 @@ ConstantFolding::tryCollapseChainedMULs(Instruction *mul2,
 
          if (mul1->src(s1 = 0).getImmediate(imm1) ||
              mul1->src(s1 = 1).getImmediate(imm1)) {
+            bld.setPosition(mul1, false);
             // a = mul r, imm1
             // d = mul a, imm2 -> d = mul r, (imm1 * imm2)
             mul1->setSrc(s1, bld.loadImm(NULL, f * imm1.reg.data.f32));
