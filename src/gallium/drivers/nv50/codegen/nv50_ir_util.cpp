@@ -366,6 +366,7 @@ int BitSet::findFreeRange(unsigned int count) const
          }
       }
    }
+   pos += i * 32;
 
    return ((pos + count) <= size) ? pos : -1;
 }

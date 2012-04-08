@@ -883,7 +883,7 @@ GCRA::makeCompound(Instruction *insn, bool split)
       val->compMask &= makeCompMask(size, base, getNode(val)->colors);
       assert(val->compMask);
 
-      INFO_DBG(prog->dbgFlags, REG_ALLOC, "compound: %%%i:%x <- %%%i:%x\n",
+      INFO_DBG(prog->dbgFlags, REG_ALLOC, "compound: %%%i:%02x <- %%%i:%02x\n",
            rep->id, rep->compMask, val->id, val->compMask);
 
       base += getNode(val)->colors;
@@ -1302,10 +1302,9 @@ GCRA::allocateRegisters(ArrayList& insns)
       return false;
    for (unsigned int i = 0; i < nodeCount; ++i) {
       LValue *lval = reinterpret_cast<LValue *>(func->allLValues.get(i));
-      if (!lval->livei.isEmpty()) {
+      nodes[i].init(regs, lval);
+      if (!lval->livei.isEmpty())
          RIG.insert(&nodes[i]);
-         nodes[i].init(regs, lval);
-      }
    }
 
    // coalesce first, we use only 1 RIG node for a group of joined values
