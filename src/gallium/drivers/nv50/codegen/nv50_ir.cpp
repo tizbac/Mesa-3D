@@ -776,6 +776,8 @@ Instruction::setIndirect(int s, int dim, Value *value)
       if (!value)
          return true;
       p = srcs.size();
+      while (p > 0 && !srcExists(p - 1))
+         --p;
    }
    setSrc(p, value);
    srcs[p].usedAsPtr = (value != 0);
@@ -796,8 +798,11 @@ Instruction::setPredicate(CondCode ccode, Value *value)
       return true;
    }
 
-   if (predSrc < 0)
+   if (predSrc < 0) {
       predSrc = srcs.size();
+      while (predSrc > 0 && !srcExists(predSrc - 1))
+         --predSrc;
+   }
 
    setSrc(predSrc, value);
    return true;
