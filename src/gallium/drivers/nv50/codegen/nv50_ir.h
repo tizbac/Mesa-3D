@@ -615,7 +615,7 @@ public:
       return s < srcs.size() && srcs[s].exists();
    }
 
-   inline bool constrainedDefs() const { return defExists(1); }
+   inline bool constrainedDefs() const;
 
    bool setPredicate(CondCode ccode, Value *);
    inline Value *getPredicate() const;
