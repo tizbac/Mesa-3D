@@ -129,7 +129,7 @@ nv50_create(struct pipe_screen *pscreen, void *priv)
    ret = nouveau_bufctx_new(screen->base.client, NV50_BIND_COUNT,
                             &nv50->bufctx_3d);
    if (!ret)
-      ret = nouveau_bufctx_new(screen->base.client, 1, &nv50->bufctx);
+      ret = nouveau_bufctx_new(screen->base.client, 2, &nv50->bufctx);
    if (ret)
       goto out_err;
 
