@@ -195,7 +195,7 @@ TargetNV50::getFileSize(DataFile file) const
 {
    switch (file) {
    case FILE_NULL:          return 0;
-   case FILE_GPR:           return 128;
+   case FILE_GPR:           return 256; // in 16-bit units **
    case FILE_PREDICATE:     return 0;
    case FILE_FLAGS:         return 4;
    case FILE_ADDRESS:       return 4;
@@ -211,6 +211,7 @@ TargetNV50::getFileSize(DataFile file) const
       assert(!"invalid file");
       return 0;
    }
+   // ** only first 128 units encodable for 16-bit regs
 }
 
 unsigned int
