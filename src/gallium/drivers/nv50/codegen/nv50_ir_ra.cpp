@@ -56,24 +56,30 @@ public:
       return last[f] + 1;
    }
 
-   inline unsigned int units(DataFile f, uint8_t size) const
+   inline unsigned int units(DataFile f, unsigned int size) const
    {
       return size >> unit[f];
    }
-   inline unsigned int rbyte(DataFile f, uint8_t units) const
-   {
-      return units << unit[f];
-   }
    // for regs of size >= 4, id is counted in 4-byte words (like nv50/c0 binary)
-   inline unsigned int sizeToId(DataFile f, uint8_t size) const
+   inline unsigned int idToBytes(Value *v) const
    {
-      if (size < 4)
-         return units(f, size);
-      return size / 4;
+      return v->reg.data.id * MIN2(v->reg.size, 4);
    }
-   inline unsigned int idToUnits(DataFile f, uint8_t size, int id) const
+   inline unsigned int idToUnits(Value *v) const
    {
-      return units(f, id * MIN2(size, 4));
+      return units(v->reg.file, idToBytes(v));
+   }
+   inline int bytesToId(Value *v, unsigned int bytes) const
+   {
+      if (v->reg.size < 4)
+         return units(v->reg.file, bytes);
+      return bytes / 4;
+   }
+   inline int unitsToId(DataFile f, int u, uint8_t size) const
+   {
+      if (u < 0)
+         return -1;
+      return (size < 4) ? u : ((u << unit[f]) / 4);
    }
 
    void print() const;
@@ -737,7 +743,7 @@ GCRA::RIG_Node::init(const RegisterSet& regs, LValue *lval)
    f = lval->reg.file;
    reg = -1;
    if (lval->reg.data.id >= 0)
-      reg = regs.idToUnits(f, lval->reg.size, lval->reg.data.id);
+      reg = regs.idToUnits(lval);
 
    weight = std::numeric_limits<float>::infinity();
    degree = 0;
@@ -1283,7 +1289,7 @@ GCRA::selectRegisters()
       LValue *lval = nodes[i].getValue();
       if (nodes[i].reg >= 0 && nodes[i].colors > 0)
          lval->reg.data.id =
-            regs.rbyte(nodes[i].f, nodes[i].reg) / MIN2(lval->reg.size, 4);
+            regs.unitsToId(nodes[i].f, nodes[i].reg, lval->reg.size);
    }
    return true;
 }
@@ -1590,12 +1596,12 @@ GCRA::resolveSplitsAndMerges()
         it != splits.end();
         ++it) {
       Instruction *split = *it;
-      int reg = split->getSrc(0)->reg.data.id;
+      unsigned int reg = regs.idToBytes(split->getSrc(0));
       for (int d = 0; split->defExists(d); ++d) {
          Value *v = split->getDef(d);
-         v->reg.data.id = reg;
+         v->reg.data.id = regs.bytesToId(v, reg);
          v->join = v;
-         reg += regs.sizeToId(v->reg.file, v->reg.size);
+         reg += v->reg.size;
       }
       delete_Instruction(prog, split);
    }
@@ -1605,12 +1611,12 @@ GCRA::resolveSplitsAndMerges()
         it != merges.end();
         ++it) {
       Instruction *merge = *it;
-      int reg = merge->getDef(0)->reg.data.id;
+      unsigned int reg = regs.idToBytes(merge->getDef(0));
       for (int s = 0; merge->srcExists(s); ++s) {
          Value *v = merge->getSrc(s);
-         v->reg.data.id = reg;
+         v->reg.data.id = regs.bytesToId(v, reg);
          v->join = v;
-         reg += regs.sizeToId(v->reg.file, v->reg.size);
+         reg += v->reg.size;
       }
       delete_Instruction(prog, merge);
    }

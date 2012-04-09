@@ -279,8 +279,12 @@ int LValue::print(char *buf, size_t size, DataType ty) const
    case FILE_GPR:
       r = 'r'; col = TXT_GPR;
       if (reg.size == 2) {
-         postFix = (idx & 1) ? "h" : "l";
-         idx /= 2;
+         if (p == '$') {
+            postFix = (idx & 1) ? "h" : "l";
+            idx /= 2;
+         } else {
+            postFix = "s";
+         }
       } else
       if (reg.size == 8) {
          postFix = "d";
