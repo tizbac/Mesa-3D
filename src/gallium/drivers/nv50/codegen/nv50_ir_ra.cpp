@@ -260,8 +260,11 @@ class SpillCodeInserter
 {
 public:
    SpillCodeInserter(Function *fn) : func(fn), stackSize(0), stackBase(0) { }
+
    bool run(const std::list<ValuePair>&);
+
    Symbol *assignSlot(const Interval&, unsigned int size);
+   inline int32_t getStackSize() const { return stackSize; }
 
 private:
    Function *func;
@@ -1096,7 +1099,8 @@ GCRA::calculateSpillWeights()
               ++it)
             rc += (*it)->get()->refCount();
 
-         nodes[i].weight = (float)rc * (float)rc / (float)nodes[i].livei.extent();
+         nodes[i].weight =
+            (float)rc * (float)rc / (float)nodes[i].livei.extent();
       }
 
       if (nodes[i].degree < nodes[i].degreeLimit) {
@@ -1383,13 +1387,16 @@ Symbol *
 SpillCodeInserter::assignSlot(const Interval &livei, unsigned int size)
 {
    SpillSlot slot;
-   const int32_t base = stackBase + (size - (stackBase % size));
+   int32_t offsetBase = stackSize;
    int32_t offset;
    std::list<SpillSlot>::iterator pos = slots.end(), it = slots.begin();
 
+   if (offsetBase % size)
+      offsetBase += size - (offsetBase % size);
+
    slot.sym = NULL;
 
-   for (offset = base; offset < stackSize; offset += size) {
+   for (offset = offsetBase; offset < stackSize; offset += size) {
       while (it != slots.end() && it->offset < offset)
          ++it;
       if (it == slots.end()) // no slots left
@@ -1475,7 +1482,8 @@ SpillCodeInserter::run(const std::list<ValuePair>& lst)
 
       for (Value::DefIterator d = lval->defs.begin(); d != lval->defs.end();
            ++d) {
-         Value *slot = mem ? static_cast<Value *>(mem) : new_LValue(func, FILE_GPR);
+         Value *slot = mem ?
+            static_cast<Value *>(mem) : new_LValue(func, FILE_GPR);
          Value *tmp = NULL;
          Instruction *last = NULL;
 
@@ -1526,8 +1534,11 @@ RegAlloc::exec()
    for (IteratorRef it = prog->calls.iteratorDFS(false);
         !it->end(); it->next()) {
       func = Function::get(reinterpret_cast<Graph::Node *>(it->get()));
+
+      func->tlsBase = prog->tlsSize;
       if (!execFunc())
          return false;
+      prog->tlsSize += func->tlsSize;
    }
    return true;
 }
@@ -1584,6 +1595,7 @@ RegAlloc::execFunc()
    }
    INFO_DBG(prog->dbgFlags, REG_ALLOC, "RegAlloc done: %i\n", ret);
 
+   func->tlsSize = insertSpills.getStackSize();
 out:
    return ret;
 }

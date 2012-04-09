@@ -1144,6 +1144,7 @@ out:
    info->bin.maxGPR = prog->maxGPR;
    info->bin.code = prog->code;
    info->bin.codeSize = prog->binSize;
+   info->bin.tlsSpace = prog->tlsSize;
 
    delete prog;
    nv50_ir::Target::destroy(targ);

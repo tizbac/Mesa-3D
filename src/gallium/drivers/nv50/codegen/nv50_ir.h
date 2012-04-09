@@ -896,7 +896,6 @@ public:
 
    uint32_t binPos;
    uint32_t binSize;
-   uint32_t tlsSize; // size required for FILE_MEMORY_LOCAL
 
    Instruction *joinAt; // for quick reference
 
@@ -1046,6 +1045,7 @@ public:
 
    uint32_t *code;
    uint32_t binSize;
+   uint32_t tlsSize; // size required for FILE_MEMORY_LOCAL
 
    int maxGPR;
 
