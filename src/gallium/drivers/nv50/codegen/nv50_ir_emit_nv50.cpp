@@ -106,7 +106,7 @@ private:
    void emitSFnOp(const Instruction *, uint8_t subOp);
 
    void emitShift(const Instruction *);
-   void emitARL(const Instruction *);
+   void emitARL(const Instruction *, unsigned int shl);
    void emitLogicOp(const Instruction *);
    void emitNOT(const Instruction *);
 
@@ -735,6 +735,7 @@ CodeEmitterNV50::emitMOV(const Instruction *i)
       code[1] = 0x40000000;
       defId(i->def(0), 2);
       setARegBits(SDATA(i->src(0)).id + 1);
+      emitFlagsRd(i);
    } else
    if (df == FILE_FLAGS) {
       code[0] = 0x00000001;
@@ -1255,11 +1256,9 @@ CodeEmitterNV50::emitLogicOp(const Instruction *i)
 }
 
 void
-CodeEmitterNV50::emitARL(const Instruction *i)
+CodeEmitterNV50::emitARL(const Instruction *i, unsigned int shl)
 {
-   assert(i->src(1).getFile() == FILE_IMMEDIATE);
-
-   code[0] = 0x00000001 | (i->getSrc(1)->reg.data.u32 & 0x3f) << 16;
+   code[0] = 0x00000001 | (shl << 16);
    code[1] = 0xc0000000;
 
    code[0] |= (DDATA(i->def(0)).id + 1) << 2;
@@ -1273,7 +1272,8 @@ void
 CodeEmitterNV50::emitShift(const Instruction *i)
 {
    if (i->def(0).getFile() == FILE_ADDRESS) {
-      emitARL(i);
+      assert(i->srcExists(1) && i->src(1).getFile() == FILE_IMMEDIATE);
+      emitARL(i, i->getSrc(1)->reg.data.u32 & 0x3f);
    } else {
       code[0] = 0x30000001;
       code[1] = (i->op == OP_SHR) ? 0xe4000000 : 0xc4000000;
@@ -1538,7 +1538,12 @@ CodeEmitterNV50::emitInstruction(Instruction *insn)
       emitCVT(insn);
       break;
    case OP_CVT:
-      if (insn->def(0).getFile() == FILE_FLAGS)
+      if (insn->def(0).getFile() == FILE_ADDRESS)
+         emitARL(insn, 0);
+      else
+      if (insn->def(0).getFile() == FILE_FLAGS ||
+          insn->src(0).getFile() == FILE_FLAGS ||
+          insn->src(0).getFile() == FILE_ADDRESS)
          emitMOV(insn);
       else
          emitCVT(insn);
