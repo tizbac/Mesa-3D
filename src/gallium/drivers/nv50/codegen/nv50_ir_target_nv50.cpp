@@ -486,7 +486,7 @@ recordLocation(uint16_t *locs, uint8_t *masks,
                const struct nv50_ir_varying *var)
 {
    uint16_t addr = var->slot[0] * 4;
-   
+
    switch (var->sn) {
    case TGSI_SEMANTIC_POSITION: locs[SV_POSITION] = addr; break;
    case TGSI_SEMANTIC_INSTANCEID: locs[SV_INSTANCE_ID] = addr; break;
