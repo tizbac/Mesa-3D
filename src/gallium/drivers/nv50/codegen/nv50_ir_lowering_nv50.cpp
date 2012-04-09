@@ -310,6 +310,8 @@ NV50LegalizeSSA::handleAddrDef(Instruction *i)
 {
    Instruction *arl;
 
+   i->getDef(0)->reg.size = 2; // $aX are only 16 bit
+
    // only ADDR <- SHL(GPR, IMM) and ADDR <- ADD(ADDR, IMM) are valid
    if (i->srcExists(1) && i->src(1).getFile() == FILE_IMMEDIATE) {
       if (i->op == OP_SHL && i->src(0).getFile() == FILE_GPR)
