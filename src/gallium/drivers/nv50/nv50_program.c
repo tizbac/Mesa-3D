@@ -41,16 +41,6 @@ nv50_vertprog_assign_slots(struct nv50_ir_prog_info *info)
 
    n = 0;
    for (i = 0; i < info->numInputs; ++i) {
-      switch (info->in[i].sn) {
-      case TGSI_SEMANTIC_INSTANCEID:
-         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_VERTEX_ID;
-         continue;
-      case TGSI_SEMANTIC_VERTEXID:
-         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_INSTANCE_ID;
-         continue;
-      default:
-         break;
-      }
       prog->in[i].id = i;
       prog->in[i].sn = info->in[i].sn;
       prog->in[i].si = info->in[i].si;
@@ -68,16 +58,21 @@ nv50_vertprog_assign_slots(struct nv50_ir_prog_info *info)
    for (i = 0; i < info->numSysVals; ++i) {
       switch (info->sv[i].sn) {
       case TGSI_SEMANTIC_INSTANCEID:
-         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_VERTEX_ID;
+         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_INSTANCE_ID;
          continue;
       case TGSI_SEMANTIC_VERTEXID:
-         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_INSTANCE_ID;
+         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_VERTEX_ID;
+         prog->vp.attrs[2] |= NV50_3D_VP_GP_BUILTIN_ATTR_EN_UNK12;
          continue;
       default:
          break;
       }
    }
-   /* TODO: communicate slots for InstanceID and VertexID */
+   /* VertexID before InstanceID */
+   if (info->io.vertexId < info->numSysVals)
+      info->sv[info->io.vertexId].slot[0] = n++;
+   if (info->io.instanceId < info->numSysVals)
+      info->sv[info->io.instanceId].slot[0] = n++;
 
    n = 0;
    for (i = 0; i < info->numOutputs; ++i) {
