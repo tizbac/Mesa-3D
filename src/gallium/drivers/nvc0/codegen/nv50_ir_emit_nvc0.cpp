@@ -1961,6 +1961,7 @@ private:
    int cycle;
    int prevData;
    operation prevOp;
+   bool postExport;
 
    const Target *targ;
 
@@ -1995,7 +1996,7 @@ SchedDataCalculator::setDelay(Instruction *insn, int delay, Instruction *next)
    if (delay >= 0 || prevData == 0x04 ||
        !next || !targ->canDualIssue(insn, next)) {
       insn->sched = static_cast<uint8_t>(MAX2(delay, 0));
-      if (prevOp == OP_EXPORT)
+      if (postExport)
          insn->sched |= 0x40;
       else
          insn->sched |= 0x20;
@@ -2003,10 +2004,13 @@ SchedDataCalculator::setDelay(Instruction *insn, int delay, Instruction *next)
       insn->sched = 0x04; // dual-issue
    }
 
-   if (prevData != 0x04 || prevOp != OP_EXPORT)
-      if (insn->sched != 0x04 || insn->op == OP_EXPORT)
-         prevOp = insn->op;
+   if (insn->op == OP_EXPORT)
+      postExport = true;
+   else
+   if ((prevOp != OP_EXPORT || prevData != 0x04) && insn->sched != 0x04)
+      postExport = false;
 
+   prevOp = insn->op;
    prevData = insn->sched;
 }
 
@@ -2058,6 +2062,8 @@ SchedDataCalculator::visit(BasicBlock *bb)
    }
    if (bb->cfg.incidentCount() > 1)
       prevOp = OP_NOP;
+
+   postExport = prevOp == OP_EXPORT;
 
 #ifdef NVC0_DEBUG_SCHED_DATA
    INFO("=== BB:%i initial scores\n", bb->getId());
@@ -2132,9 +2138,6 @@ SchedDataCalculator::calcDelay(const Instruction *insn, int cycle) const
       if (insn->op == OP_MUL && !isFloatType(insn->dType))
          ready = score->res.imul;
       break;
-   case OPCLASS_TEXTURE:
-      ready = score->res.tex;
-      break;
    case OPCLASS_LOAD:
       ready = score->res.ld[insn->src(0).getFile()];
       break;
@@ -2173,7 +2176,7 @@ SchedDataCalculator::commitInsn(const Instruction *insn, int cycle)
          score->res.imul = cycle + 4;
       break;
    case OPCLASS_TEXTURE:
-      score->res.tex = cycle + 18;
+      score->res.tex = cycle + 18; // tex to non-tex delay
       break;
    case OPCLASS_LOAD:
       if (insn->src(0).getFile() == FILE_MEMORY_CONST)
