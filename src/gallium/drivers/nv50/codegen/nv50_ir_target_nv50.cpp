@@ -505,6 +505,16 @@ int TargetNV50::getThroughput(const Instruction *i) const
    }
 }
 
+unsigned int TargetNV50::getMaxConcurrencyRegLimit() const
+{
+   switch (chipset & ~0xf) {
+   case 0xa0:
+      return 16 * 2;
+   default:
+      return 10 * 2;
+   }
+}
+
 static void
 recordLocation(uint16_t *locs, uint8_t *masks,
                const struct nv50_ir_varying *var)

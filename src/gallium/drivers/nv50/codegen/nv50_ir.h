@@ -1103,6 +1103,8 @@ protected:
 
 #include "nv50_ir_inlines.h"
 
+bool runSchedulingPass(Program *);
+
 } // namespace nv50_ir
 
 #endif // __NV50_IR_H__

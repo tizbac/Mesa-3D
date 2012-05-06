@@ -185,6 +185,9 @@ public:
    virtual unsigned int getFileSize(DataFile) const = 0;
    virtual unsigned int getFileUnit(DataFile) const = 0;
 
+   // number of GPRs above which concurrency begins to decrease
+   virtual unsigned int getMaxConcurrencyRegLimit() const = 0;
+
    virtual uint32_t getSVAddress(DataFile, const Symbol *) const = 0;
 
 public:

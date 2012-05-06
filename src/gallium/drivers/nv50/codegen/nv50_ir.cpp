@@ -1149,6 +1149,8 @@ nv50_ir_generate_code(struct nv50_ir_prog_info *info)
    prog->optimizeSSA(info->optLevel);
    prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_SSA);
 
+   runSchedulingPass(prog);
+
    if (prog->dbgFlags & NV50_IR_DEBUG_BASIC)
       prog->print();
 

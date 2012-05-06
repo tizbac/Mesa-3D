@@ -679,4 +679,16 @@ bool TargetNVC0::canDualIssue(const Instruction *a, const Instruction *b) const
    }
 }
 
+unsigned int TargetNVC0::getMaxConcurrencyRegLimit() const
+{
+   switch (chipset & ~0xf) {
+   case 0xe0:
+      return 32;
+   case 0xc0:
+   case 0xd0:
+   default:
+      return 21;
+   }
+}
+
 } // namespace nv50_ir

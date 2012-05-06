@@ -58,6 +58,8 @@ public:
    virtual unsigned int getFileSize(DataFile) const;
    virtual unsigned int getFileUnit(DataFile) const;
 
+   virtual unsigned int getMaxConcurrencyRegLimit() const;
+
    virtual uint32_t getSVAddress(DataFile shaderFile, const Symbol *sv) const;
 
    uint32_t getBuiltinOffset(int builtin) const;
