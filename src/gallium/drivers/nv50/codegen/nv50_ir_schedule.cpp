@@ -48,13 +48,15 @@ private:
    Instruction *sts[DATA_FILE_COUNT];
 
    int regPressure;
-   int regLimit;
+   int regPressureLimit;
    int regUnitLog2;
 
    struct {
       int sfu;
       int imul;
       int tex;
+      int ld[DATA_FILE_COUNT];
+      int st[DATA_FILE_COUNT];
    } res;
    bool groupTex;
 
@@ -250,7 +252,9 @@ InstrScheduling::visit(Function *fn)
 
    regUnitLog2 = targ->getFileUnit(FILE_GPR);
    regPressure = 0;
-   regLimit = targ->getMaxConcurrencyRegLimit();
+   regPressureLimit = 8;//targ->getMaxConcurrencyRegLimit();
+
+   groupTex = targ->getChipset() >= 0xc0;
 
    fn->buildLiveSets(); // XXX: GPRs only
 
@@ -287,7 +291,7 @@ InstrScheduling::buildDependencyGraph(Instruction *insn)
 
       insn->bb->remove(insn);
 
-      INFO("removing "); insn->print();
+      // INFO("removing "); insn->print();
 
       if (insn->op == OP_LOAD) {
          checkRAW(insn);
@@ -404,16 +408,14 @@ InstrScheduling::retire(Instruction *insn)
 }
 
 static int
-countGlobalDefs(Instruction *insn)
+isGlobalDef(const Instruction *insn, int d)
 {
    int count = 0;
-   for (int d = 0; insn->defExists(d); ++d) {
-      for (Value::DefIterator def = insn->getDef(d)->defs.begin();
-           def != insn->getDef(d)->defs.end(); ++def) {
-         BasicBlock *bb = (*def)->getInsn()->bb;
-         if (bb && bb != insn->bb)
-            ++count;
-      }
+   for (Value::DefCIterator def = insn->getDef(d)->defs.begin();
+        def != insn->getDef(d)->defs.end(); ++def) {
+      BasicBlock *bb = (*def)->getInsn()->bb;
+      if (bb && bb != insn->bb)
+         ++count;
    }
    return count;
 }
@@ -423,42 +425,49 @@ InstrScheduling::selectNext()
 {
    Instruction *best = NULL;
    int maxScore = std::numeric_limits<int>::min();
+   const bool byRegPressure = (regPressure >> regUnitLog2) > regPressureLimit;
 
    for (Graph::EdgeIterator ei = root.outgoing(); !ei.end(); ei.next()) {
       Instruction *insn = reinterpret_cast<Instruction *>(ei.getNode()->data);
       SchedInfo& sinfo = getInfo(insn);
       int score = 0;
 
-      // 1st criterion: all dependencies have retired
-      score += (cycle - sinfo.depCycle) * 32;
-#if 0
-      INFO("eligible: "); insn->print();
-      INFO("distance score: %i\n", score);
-#endif
-      // 2nd criterion: reduce register pressure
-      //  - global definitions reduce the score
-      //  - killed values increase the score
-      for (int s = 0; insn->srcExists(s); ++s) {
-         LValue *lval = insn->getSrc(s)->asLValue();
-         if (lval) {
-            score += 16;
-            if (usesLeft.at(lval->id) == 1)
-               score += 32;
+      if (byRegPressure) {
+         for (int s = 0; insn->srcExists(s); ++s) {
+            LValue *lval = insn->getSrc(s)->asLValue();
+            if (!lval)
+               continue;
+            if (!--usesLeft.at(lval->id)) {
+               score += 2;
+               if (lval->reg.file == FILE_GPR)
+                  score += 4 * lval->reg.size;
+            }
             Instruction *gen = lval->getInsn();
             if (gen && !gen->bb)
-               score += cycle - getInfo(gen).cycle;
+               score += MIN2(16, cycle - getInfo(gen).cycle); // def-use spring
          }
+         // reset use counts
+         for (int s = 0; insn->srcExists(s); ++s) {
+            LValue *lval = insn->getSrc(s)->asLValue();
+            if (lval)
+               usesLeft[lval->id]++;
+         }
+         for (int d = 0; insn->defExists(d); ++d) {
+            score -= 2;
+            if (insn->getDef(d)->reg.file == FILE_GPR)
+               score -= 4 * insn->getDef(d)->reg.size;
+            if (isGlobalDef(insn, d))
+               score -= 8;
+         }
+      } else {
+         score = MIN2((cycle - sinfo.depCycle) * 4, 16);
       }
-      score -= insn->defCount(0xff) * 16 + countGlobalDefs(insn) * 32;
-#if 0
-      INFO("values score: %i\n", score);
-#endif
 
       // 3rd criterion: many dependencies resolved
-      score += sinfo.dep.outgoingCount() * 4;
-#if 0
-      INFO("deps score: %i\n\n", score);
-#endif
+      score += sinfo.dep.outgoingCount();
+
+      if (groupTex && isTextureOp(insn->op) && isTextureOp(retired->op))
+         score += 64;
 
       if (score > maxScore) {
          maxScore = score;
@@ -478,6 +487,8 @@ InstrScheduling::visit(BasicBlock *bb)
    Instruction *insn, *next;
 
    cycle = 0;
+
+   memset(&res, 0, sizeof(res));
 
    countLValueUses(bb);
 
@@ -505,10 +516,9 @@ InstrScheduling::visit(BasicBlock *bb)
 bool
 runSchedulingPass(Program *prog)
 {
-   if (!prog)
+   if (!prog || prog->optLevel < 4)
       return true;
    InstrScheduling sched;
-   prog->print();
    return sched.run(prog, false, true);
 }
 
