@@ -16,6 +16,7 @@ struct nouveau_bo;
  */
 #define NOUVEAU_BUFFER_STATUS_GPU_READING (1 << 0)
 #define NOUVEAU_BUFFER_STATUS_GPU_WRITING (1 << 1)
+#define NOUVEAU_BUFFER_STATUS_INITIALIZED (1 << 6)
 #define NOUVEAU_BUFFER_STATUS_USER_MEMORY (1 << 7)
 
 /* Resources, if mapped into the GPU's address space, are guaranteed to
@@ -45,10 +46,6 @@ struct nv04_resource {
 
 void
 nouveau_buffer_release_gpu_storage(struct nv04_resource *);
-
-boolean
-nouveau_buffer_download(struct nouveau_context *, struct nv04_resource *,
-                        unsigned start, unsigned size);
 
 boolean
 nouveau_buffer_migrate(struct nouveau_context *,

@@ -115,6 +115,10 @@ nvc0_default_kick_notify(struct nouveau_pushbuf *push)
    }
 }
 
+static int32_t
+nvc0_invalidate_resource_storage(struct nouveau_context *nv,
+                                 struct pipe_resource *, int32_t nref);
+
 struct pipe_context *
 nvc0_create(struct pipe_screen *pscreen, void *priv)
 {
@@ -163,6 +167,7 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    nvc0_init_state_functions(nvc0);
    nvc0_init_transfer_functions(nvc0);
    nvc0_init_resource_functions(pipe);
+   nvc0->base.invalidate_resource_storage = nvc0_invalidate_resource_storage;
 
 #ifdef NVC0_WITH_DRAW_MODULE
    /* no software fallbacks implemented */
@@ -217,4 +222,87 @@ nvc0_bufctx_fence(struct nvc0_context *nvc0, struct nouveau_bufctx *bufctx,
       if (res)
          nvc0_resource_validate(res, (unsigned)ref->priv_data);
    }
+}
+
+static int32_t
+nvc0_invalidate_resource_storage(struct nouveau_context *nv,
+                                 struct pipe_resource *res, int32_t nref)
+{
+   struct nvc0_context *nvc0 = nvc0_context(&nv->pipe);
+   unsigned s, i;
+
+   if (res->bind & PIPE_BIND_VERTEX_BUFFER) {
+      for (i = 0; i < nvc0->num_vtxbufs; ++i) {
+         if (nvc0->vtxbuf[i].buffer == res) {
+            nvc0->dirty |= NVC0_NEW_ARRAYS;
+            if (!--nref)
+               return 0;
+         }
+      }
+   }
+   if (res->bind & PIPE_BIND_INDEX_BUFFER) {
+      if (nvc0->idxbuf.buffer == res) {
+         nvc0->dirty |= NVC0_NEW_IDXBUF;
+         if (!--nref)
+            return 0;
+      }
+   }
+
+   if (res->bind & PIPE_BIND_CONSTANT_BUFFER) {
+      for (s = 0; s < 5; ++s) {
+      for (i = 0; i < NVC0_MAX_PIPE_CONSTBUFS; ++i) {
+         if (nvc0->constbuf[s][i].u.buf == res) {
+            nvc0->dirty |= NVC0_NEW_CONSTBUF;
+            nvc0->constbuf_dirty[s] |= 1 << i;
+            if (!--nref)
+               return 0;
+         }
+      }
+      }
+   }
+
+   if (res->bind & PIPE_BIND_STREAM_OUTPUT) {
+      /* even if this doesn't make much sense ... */
+      for (i = 0; i < nvc0->num_tfbbufs; ++i) {
+         if (nvc0->tfbbuf[i]->buffer == res) {
+            nvc0->dirty |= NVC0_NEW_TFB_TARGETS;
+            nvc0->tfbbuf_dirty |= 1 << i;
+            nvc0_so_target(nvc0->tfbbuf[i])->clean = TRUE;
+            if (!--nref)
+               return 0;
+         }
+      }
+   }
+
+   if (res->bind & PIPE_BIND_SAMPLER_VIEW) {
+      for (s = 0; s < 5; ++s) {
+      for (i = 0; i < nvc0->num_textures[s]; ++i) {
+         if (nvc0->textures[s][i]->texture == res) {
+            nvc0->dirty |= NVC0_NEW_TEXTURES;
+            nvc0->textures_dirty[s] |= 1 << i;
+            if (!--nref)
+               return 0;
+         }
+      }
+      }
+   }
+
+   if (res->bind & PIPE_BIND_RENDER_TARGET) {
+      for (i = 0; i < nvc0->framebuffer.nr_cbufs; ++i) {
+         if (nvc0->framebuffer.cbufs[i]->texture == res) {
+            nvc0->dirty |= NVC0_NEW_FRAMEBUFFER;
+            if (!--nref)
+               return 0;
+         }
+      }
+   }
+   if (res->bind & PIPE_BIND_DEPTH_STENCIL) {
+      if (nvc0->framebuffer.zsbuf->texture == res) {
+         nvc0->dirty |= NVC0_NEW_FRAMEBUFFER;
+         if (!--nref)
+            return 0;
+      }
+   }
+
+   return nref;
 }

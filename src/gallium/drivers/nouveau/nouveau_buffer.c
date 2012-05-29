@@ -12,12 +12,66 @@
 
 struct nouveau_transfer {
    struct pipe_transfer base;
+
+   /* storage for staging transfer: pushbuf if (map && !bo) */
+   uint8_t *map;
+   struct nouveau_bo *bo;
+   uint32_t bo_offset;
+   struct nouveau_mm_allocation *mm;
 };
+
+#if 0
+static INLINE void
+nouveau_transfer_info(struct nouveau_transfer *xfer, unsigned count)
+{
+   struct nv04_resource *buf = nv04_resource(xfer->base.resource);
+
+   debug_printf("TRANSFER[%u] ", count);
+
+   switch (buf->domain) {
+   case NOUVEAU_BO_VRAM: debug_printf("VRAM "); break;
+   case NOUVEAU_BO_GART: debug_printf("GART "); break;
+   default:
+      break;
+   }
+
+   if (xfer->base.usage & PIPE_TRANSFER_READ)
+      debug_printf("rd ");
+   if (xfer->base.usage & PIPE_TRANSFER_WRITE)
+      debug_printf("wr ");
+   if (xfer->base.usage & PIPE_TRANSFER_MAP_DIRECTLY)
+      debug_printf("directly ");
+   if (xfer->base.usage & PIPE_TRANSFER_DISCARD_RANGE)
+      debug_printf("discard ");
+   if (xfer->base.usage & PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE)
+      debug_printf("drop ");
+   if (xfer->base.usage & PIPE_TRANSFER_DONTBLOCK)
+      debug_printf("noblock ");
+   if (xfer->base.usage & PIPE_TRANSFER_UNSYNCHRONIZED)
+      debug_printf("nosync ");
+   if (xfer->base.usage & PIPE_TRANSFER_FLUSH_EXPLICIT)
+      debug_printf("flush ");
+
+   debug_printf(": buffer(%p,%x)[%x,%x)\n",
+                xfer->base.resource, xfer->base.resource->width0,
+                xfer->base.box.x,
+                xfer->base.box.x + xfer->base.box.width);
+}
+#endif
 
 static INLINE struct nouveau_transfer *
 nouveau_transfer(struct pipe_transfer *transfer)
 {
    return (struct nouveau_transfer *)transfer;
+}
+
+static boolean
+nouveau_buffer_malloc(struct nv04_resource *buf)
+{
+   if (buf->data)
+      return TRUE;
+   buf->data = MALLOC(buf->base.width0);
+   return buf->data ? TRUE : FALSE;
 }
 
 static INLINE boolean
@@ -40,13 +94,10 @@ nouveau_buffer_allocate(struct nouveau_screen *screen,
                                     &buf->bo, &buf->offset);
       if (!buf->bo)
          return FALSE;
-   }
-   if (domain != NOUVEAU_BO_GART) {
-      if (!buf->data) {
-         buf->data = MALLOC(buf->base.width0);
-         if (!buf->data)
-            return FALSE;
-      }
+   } else {
+      assert(domain == 0);
+      if (!nouveau_buffer_malloc(buf))
+         return FALSE;
    }
    buf->domain = domain;
    if (buf->bo)
@@ -79,7 +130,6 @@ nouveau_buffer_reallocate(struct nouveau_screen *screen,
                           struct nv04_resource *buf, unsigned domain)
 {
    nouveau_buffer_release_gpu_storage(buf);
-
    return nouveau_buffer_allocate(screen, buf, domain);
 }
 
@@ -100,140 +150,95 @@ nouveau_buffer_destroy(struct pipe_screen *pscreen,
    FREE(res);
 }
 
-/* Maybe just migrate to GART right away if we actually need to do this. */
-boolean
-nouveau_buffer_download(struct nouveau_context *nv, struct nv04_resource *buf,
-                        unsigned start, unsigned size)
+static boolean
+nouveau_transfer_staging_allocate(struct nouveau_context *nv,
+                                  struct nouveau_transfer *xfer,
+                                  unsigned size)
 {
-   struct nouveau_mm_allocation *mm;
-   struct nouveau_bo *bounce = NULL;
-   uint32_t offset;
-
-   assert(buf->domain == NOUVEAU_BO_VRAM);
-
-   mm = nouveau_mm_allocate(nv->screen->mm_GART, size, &bounce, &offset);
-   if (!bounce)
+   xfer->mm = nouveau_mm_allocate(nv->screen->mm_GART, size, &xfer->bo,
+                                  &xfer->bo_offset);
+   if (!xfer->bo || nouveau_bo_map(xfer->bo, 0, NULL))
       return FALSE;
-
-   nv->copy_data(nv, bounce, offset, NOUVEAU_BO_GART,
-                 buf->bo, buf->offset + start, NOUVEAU_BO_VRAM, size);
-
-   if (nouveau_bo_map(bounce, NOUVEAU_BO_RD, nv->screen->client))
-      return FALSE;
-   memcpy(buf->data + start, (uint8_t *)bounce->map + offset, size);
-
-   buf->status &= ~NOUVEAU_BUFFER_STATUS_GPU_WRITING;
-
-   nouveau_bo_ref(NULL, &bounce);
-   if (mm)
-      nouveau_mm_free(mm);
+   xfer->map = (uint8_t *)xfer->bo->map + xfer->bo_offset;
    return TRUE;
+}
+
+static INLINE void
+nouveau_transfer_staging_free(struct nouveau_context *nv,
+                              struct nouveau_transfer *xfer)
+{
+   if (likely(xfer->bo)) {
+      nouveau_bo_ref(NULL, &xfer->bo);
+      if (xfer->mm)
+         release_allocation(&xfer->mm, nv->screen->fence.current);
+   } else {
+      FREE(xfer->map);
+   }
 }
 
 static boolean
-nouveau_buffer_upload(struct nouveau_context *nv, struct nv04_resource *buf,
-                      unsigned start, unsigned size)
+nouveau_buffer_download(struct nouveau_context *nv,
+                        struct nouveau_transfer *xfer, const boolean whole)
 {
-   struct nouveau_mm_allocation *mm;
-   struct nouveau_bo *bounce = NULL;
-   uint32_t offset;
+   struct nv04_resource *buf = nv04_resource(xfer->base.resource);
+   unsigned base, size;
 
-   if (size <= 192 && (nv->push_data || nv->push_cb)) {
-      if (buf->base.bind & PIPE_BIND_CONSTANT_BUFFER)
-         nv->push_cb(nv, buf->bo, buf->domain, buf->offset, buf->base.width0,
-                     start, size / 4, (const uint32_t *)(buf->data + start));
-      else
-         nv->push_data(nv, buf->bo, buf->offset + start, buf->domain,
-                       size, buf->data + start);
-      return TRUE;
+   debug_printf("ugh: %s\n", __FUNCTION__);
+
+   if (whole) {
+      if (!nouveau_buffer_malloc(buf))
+         return FALSE;
+      base = 0;
+      size = buf->base.width0;
+   } else {
+      base = xfer->base.box.x;
+      size = xfer->base.box.width;
+   }
+   if (!xfer->bo) {
+      if (!nouveau_transfer_staging_allocate(nv, xfer, size))
+         return FALSE;
    }
 
-   mm = nouveau_mm_allocate(nv->screen->mm_GART, size, &bounce, &offset);
-   if (!bounce)
+   nv->copy_data(nv, xfer->bo, xfer->bo_offset, NOUVEAU_BO_GART,
+                 buf->bo, buf->offset + base, NOUVEAU_BO_VRAM, size);
+
+   if (nouveau_bo_wait(xfer->bo, NOUVEAU_BO_RD, nv->screen->client))
       return FALSE;
-
-   nouveau_bo_map(bounce, 0, nv->screen->client);
-   memcpy((uint8_t *)bounce->map + offset, buf->data + start, size);
-
-   nv->copy_data(nv, buf->bo, buf->offset + start, NOUVEAU_BO_VRAM,
-                 bounce, offset, NOUVEAU_BO_GART, size);
-
-   nouveau_bo_ref(NULL, &bounce);
-   if (mm)
-      release_allocation(&mm, nv->screen->fence.current);
-
-   if (start == 0 && size == buf->base.width0)
+   if (whole)
       buf->status &= ~NOUVEAU_BUFFER_STATUS_GPU_WRITING;
+
+   if (buf->data)
+      memcpy(buf->data + base, xfer->map, size);
+
    return TRUE;
-}
-
-static struct pipe_transfer *
-nouveau_buffer_transfer_get(struct pipe_context *pipe,
-                            struct pipe_resource *resource,
-                            unsigned level, unsigned usage,
-                            const struct pipe_box *box)
-{
-   struct nv04_resource *buf = nv04_resource(resource);
-   struct nouveau_context *nv = nouveau_context(pipe);
-   struct nouveau_transfer *xfr = CALLOC_STRUCT(nouveau_transfer);
-   if (!xfr)
-      return NULL;
-
-   xfr->base.resource = resource;
-   xfr->base.box.x = box->x;
-   xfr->base.box.width = box->width;
-   xfr->base.usage = usage;
-
-   if (buf->domain == NOUVEAU_BO_VRAM) {
-      if (usage & PIPE_TRANSFER_READ) {
-         if (buf->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING)
-            nouveau_buffer_download(nv, buf, 0, buf->base.width0);
-      }
-   }
-
-   return &xfr->base;
 }
 
 static void
-nouveau_buffer_transfer_destroy(struct pipe_context *pipe,
-                                struct pipe_transfer *transfer)
+nouveau_staging_flush_write(struct nouveau_context *nv,
+                            struct nouveau_transfer *xfer,
+                            unsigned base, unsigned size)
 {
-   struct nv04_resource *buf = nv04_resource(transfer->resource);
-   struct nouveau_transfer *xfr = nouveau_transfer(transfer);
-   struct nouveau_context *nv = nouveau_context(pipe);
+   struct nv04_resource *buf = nv04_resource(xfer->base.resource);
+   unsigned start = base + xfer->base.box.x;
 
-   if (xfr->base.usage & PIPE_TRANSFER_WRITE) {
-      if (buf->domain == NOUVEAU_BO_VRAM) {
-         nouveau_buffer_upload(nv, buf, transfer->box.x, transfer->box.width);
-      }
-
-      if (buf->domain != 0 && (buf->base.bind & (PIPE_BIND_VERTEX_BUFFER |
-                                                 PIPE_BIND_INDEX_BUFFER)))
-         nouveau_context(pipe)->vbo_dirty = TRUE;
+   if (buf->data) {
+      memcpy(xfer->map + base, buf->data + start, size);
+      if (start == 0 && size == buf->base.width0)
+         /* cache is up-to-date */
+         buf->status &= ~NOUVEAU_BUFFER_STATUS_GPU_WRITING;
    }
 
-   FREE(xfr);
-}
-
-static INLINE boolean
-nouveau_buffer_sync(struct nv04_resource *buf, unsigned rw)
-{
-   if (rw == PIPE_TRANSFER_READ) {
-      if (!buf->fence_wr)
-         return TRUE;
-      if (!nouveau_fence_wait(buf->fence_wr))
-         return FALSE;
+   if (xfer->bo) {
+      nv->copy_data(nv, buf->bo, buf->offset + start, buf->domain,
+                    xfer->bo, xfer->bo_offset + base, NOUVEAU_BO_GART, size);
+   } else
+   if (buf->base.bind & PIPE_BIND_CONSTANT_BUFFER) {
+      nv->push_cb(nv, buf->bo, buf->domain, buf->offset, buf->base.width0,
+                  start, size / 4, (const uint32_t *)(xfer->map + base));
    } else {
-      if (!buf->fence)
-         return TRUE;
-      if (!nouveau_fence_wait(buf->fence))
-         return FALSE;
-
-      nouveau_fence_ref(NULL, &buf->fence);
+      nv->push_data(nv, buf->bo, buf->offset + start, buf->domain,
+                    size, xfer->map + base);
    }
-   nouveau_fence_ref(NULL, &buf->fence_wr);
-
-   return TRUE;
 }
 
 static INLINE boolean
@@ -245,62 +250,198 @@ nouveau_buffer_busy(struct nv04_resource *buf, unsigned rw)
       return (buf->fence && !nouveau_fence_signalled(buf->fence));
 }
 
+static INLINE int
+nouveau_resource_busy(struct nouveau_context *nv, struct nv04_resource *res)
+{
+   if (res->mm)
+      return nouveau_buffer_busy(res, PIPE_TRANSFER_WRITE);
+   return nouveau_bo_wait(res->bo, NOUVEAU_BO_WR, nv->screen->client);
+}
+
+static INLINE boolean
+nouveau_buffer_sync(struct nv04_resource *buf, unsigned rw)
+{
+   if (rw == PIPE_TRANSFER_READ) {
+      if (!buf->fence_wr)
+         return TRUE;
+      debug_printf("syncing(rd): %i\n", nouveau_buffer_busy(buf, rw));
+      if (!nouveau_fence_wait(buf->fence_wr))
+         return FALSE;
+   } else {
+      if (!buf->fence)
+         return TRUE;
+      debug_printf("syncing(wr): %i\n", nouveau_buffer_busy(buf, rw));
+      if (!nouveau_fence_wait(buf->fence))
+         return FALSE;
+
+      nouveau_fence_ref(NULL, &buf->fence);
+   }
+   nouveau_fence_ref(NULL, &buf->fence_wr);
+
+   return TRUE;
+}
+
+static struct pipe_transfer *
+nouveau_buffer_transfer_get(struct pipe_context *pipe,
+                            struct pipe_resource *resource,
+                            unsigned level, unsigned usage,
+                            const struct pipe_box *box)
+{
+   struct nouveau_context *nv = nouveau_context(pipe);
+   struct nv04_resource *buf = nv04_resource(resource);
+   struct nouveau_transfer *xfer = CALLOC_STRUCT(nouveau_transfer);
+   if (!xfer)
+      return NULL;
+
+   xfer->base.resource = resource;
+   xfer->base.box.x = box->x;
+   xfer->base.box.width = box->width;
+   xfer->base.usage = usage;
+
+   if ((usage & PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE) &&
+       !(buf->base.bind & PIPE_BIND_SHARED) &&
+       nouveau_resource_busy(nv, buf)) {
+      nouveau_buffer_reallocate(nv->screen, buf, buf->domain);
+      nouveau_fence_ref(NULL, &buf->fence);
+      nouveau_fence_ref(NULL, &buf->fence_wr);
+
+      /* invalidate if there are any references besides the transfer */
+      if (resource->reference.count > 1)
+         nv->invalidate_resource_storage(nv, resource,
+                                         resource->reference.count - 1);
+   }
+
+   return &xfer->base;
+}
+
+static void
+nouveau_buffer_transfer_destroy(struct pipe_context *pipe,
+                                struct pipe_transfer *transfer)
+{
+   struct nv04_resource *buf = nv04_resource(transfer->resource);
+   struct nouveau_transfer *xfer = nouveau_transfer(transfer);
+   struct nouveau_context *nv = nouveau_context(pipe);
+
+   if (transfer->usage & PIPE_TRANSFER_WRITE) {
+      if (xfer->map && !(transfer->usage & PIPE_TRANSFER_FLUSH_EXPLICIT))
+         nouveau_staging_flush_write(nv, xfer, 0, transfer->box.width);
+
+      if (likely(buf->domain != 0)) {
+         if (buf->base.bind &
+             (PIPE_BIND_VERTEX_BUFFER | PIPE_BIND_INDEX_BUFFER))
+            nv->vbo_dirty = TRUE;
+         /*
+         if (buf->base.bind & PIPE_BIND_SAMPLER_VIEW)
+            nv->tex_dirty = TRUE;
+         */
+      }
+
+      buf->status |= NOUVEAU_BUFFER_STATUS_INITIALIZED;
+   }
+
+   if (xfer->map)
+      nouveau_transfer_staging_free(nv, xfer);
+
+   FREE(xfer);
+}
+
+static uint8_t *
+nouveau_transfer_staging(struct nouveau_context *nv,
+                         struct nouveau_transfer *xfer, boolean discard)
+{
+   struct nv04_resource *buf = nv04_resource(xfer->base.resource);
+   uint8_t *data;
+   const unsigned base = xfer->base.box.x;
+   const unsigned size = xfer->base.box.width;
+   const boolean push = size < 192;
+
+   /* check if we already have storage */
+   if (xfer->map)
+      return buf->data ? (buf->data + base) : xfer->map;
+
+   if (!discard && buf->domain == NOUVEAU_BO_VRAM) {
+      /* if GPU is writing, caching everything will likely be useless */
+      const boolean whole = !(buf->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING);
+      if ((buf->status & NOUVEAU_BUFFER_STATUS_INITIALIZED) &&
+          (!whole || !buf->data)) {
+         if (!nouveau_buffer_download(nv, xfer, whole))
+            return NULL;
+         return whole ? (buf->data + base) : xfer->map;
+      }
+   }
+
+   if (!push) {
+      if (!nouveau_transfer_staging_allocate(nv, xfer, size))
+         return NULL;
+      data = buf->data ? (buf->data + base) : xfer->map;
+   } else
+   if (buf->data) {
+      data = buf->data + base;
+   } else {
+      xfer->map = data = MALLOC(size);
+      if (!data)
+         return NULL;
+   }
+   if (unlikely(buf->domain == NOUVEAU_BO_GART && !discard)) {
+      if (nouveau_bo_map(buf->bo, 0, NULL))
+         return NULL;
+      memcpy(data, (const uint8_t *)buf->bo->map + base, size);
+   }
+   return data;
+}
+
 static void *
 nouveau_buffer_transfer_map(struct pipe_context *pipe,
                             struct pipe_transfer *transfer)
 {
    struct nouveau_context *nv = nouveau_context(pipe);
-   struct nouveau_transfer *xfr = nouveau_transfer(transfer);
+   struct nouveau_transfer *xfer = nouveau_transfer(transfer);
    struct nv04_resource *buf = nv04_resource(transfer->resource);
    struct nouveau_bo *bo = buf->bo;
-   uint8_t *map;
-   int ret;
-   uint32_t offset = xfr->base.box.x;
    uint32_t flags = 0;
+   const unsigned usage = xfer->base.usage;
+   const boolean discard = usage &
+      (PIPE_TRANSFER_DISCARD_RANGE | PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE);
 
-   if (buf->domain != NOUVEAU_BO_GART)
-      return buf->data + offset;
+   if (buf->domain == NOUVEAU_BO_VRAM)
+      return nouveau_transfer_staging(nv, xfer, discard);
 
-   if (!buf->mm)
-      flags = nouveau_screen_transfer_flags(xfr->base.usage);
+   /* MALLOC buffer */
+   if (unlikely(buf->domain == 0))
+      return buf->data + xfer->base.box.x;
 
-   offset += buf->offset;
-
-   ret = nouveau_bo_map(buf->bo, flags, nv->screen->client);
-   if (ret)
-      return NULL;
-   map = (uint8_t *)bo->map + offset;
-
-   if (buf->mm) {
-      if (xfr->base.usage & PIPE_TRANSFER_DONTBLOCK) {
-         if (nouveau_buffer_busy(buf, xfr->base.usage & PIPE_TRANSFER_READ_WRITE))
+   /* GART */
+   if (unlikely(!buf->mm)) {
+      /* not sub-allocated, use kernel fences */
+      flags = nouveau_screen_transfer_flags(usage);
+   } else
+   if (!(usage & PIPE_TRANSFER_UNSYNCHRONIZED)) {
+      /* use staging transfer if we won't have to wait */
+      const unsigned rw = usage & PIPE_TRANSFER_READ_WRITE;
+      if (nouveau_buffer_busy(buf, rw)) {
+         if (usage & PIPE_TRANSFER_DONTBLOCK)
             return NULL;
-      } else
-      if (!(xfr->base.usage & PIPE_TRANSFER_UNSYNCHRONIZED)) {
-         nouveau_buffer_sync(buf, xfr->base.usage & PIPE_TRANSFER_READ_WRITE);
+         if (discard)
+            return nouveau_transfer_staging(nv, xfer, TRUE);
+         if (usage & PIPE_TRANSFER_WRITE)
+            if (!nouveau_buffer_busy(buf, PIPE_TRANSFER_READ))
+               return nouveau_transfer_staging(nv, xfer, FALSE);
       }
    }
-   return map;
+   if (unlikely(nouveau_bo_map(buf->bo, flags, nv->screen->client)))
+      return NULL;
+   return (uint8_t *)bo->map + (buf->offset + xfer->base.box.x);
 }
-
-
 
 static void
 nouveau_buffer_transfer_flush_region(struct pipe_context *pipe,
                                      struct pipe_transfer *transfer,
                                      const struct pipe_box *box)
 {
-#if 0
-   struct nv04_resource *res = nv04_resource(transfer->resource);
-   struct nouveau_bo *bo = res->bo;
-   unsigned offset = res->offset + transfer->box.x + box->x;
-
-   /* not using non-snoop system memory yet, no need for cflush */
-   if (1)
-      return;
-
-   /* XXX: maybe need to upload for VRAM buffers here */
-#endif
+   struct nouveau_transfer *xfer = nouveau_transfer(transfer);
+   if (xfer->map)
+      nouveau_staging_flush_write(nouveau_context(pipe), xfer,
+                                  box->x, box->width);
 }
 
 static void
@@ -310,17 +451,37 @@ nouveau_buffer_transfer_unmap(struct pipe_context *pipe,
 }
 
 
+static void
+nouveau_transfer_inline_write(struct pipe_context *pipe,
+                              struct pipe_resource *res,
+                              unsigned level,
+                              unsigned usage, /* discard | write implied */
+                              const struct pipe_box *box,
+                              const void *data,
+                              unsigned stride,
+                              unsigned layer_stride)
+{
+   
+}
+
+
 void *
 nouveau_resource_map_offset(struct nouveau_context *nv,
                             struct nv04_resource *res, uint32_t offset,
                             uint32_t flags)
 {
-   if ((res->domain == NOUVEAU_BO_VRAM) &&
-       (res->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING))
-      nouveau_buffer_download(nv, res, 0, res->base.width0);
+   if (res->domain == NOUVEAU_BO_VRAM) {
+      if (!res->data || (res->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING)) {
+         struct nouveau_transfer xfer;
+         xfer.base.resource = &res->base;
+         nouveau_buffer_download(nv, &xfer, TRUE);
+         if (xfer.bo)
+            nouveau_transfer_staging_free(nv, &xfer);
+      }
+      return res->data + offset;
+   }
 
-   if ((res->domain != NOUVEAU_BO_GART) ||
-       (res->status & NOUVEAU_BUFFER_STATUS_USER_MEMORY))
+   if (res->domain == 0 || (res->status & NOUVEAU_BUFFER_STATUS_USER_MEMORY))
       return res->data + offset;
 
    if (res->mm) {
@@ -333,7 +494,7 @@ nouveau_resource_map_offset(struct nouveau_context *nv,
       if (nouveau_bo_map(res->bo, flags, nv->screen->client))
          return NULL;
    }
-   return (uint8_t *)res->bo->map + res->offset + offset;
+   return (uint8_t *)res->bo->map + (res->offset + offset);
 }
 
 
@@ -370,11 +531,11 @@ nouveau_buffer_create(struct pipe_screen *pscreen,
        (screen->vidmem_bindings & screen->sysmem_bindings)) {
       switch (buffer->base.usage) {
       case PIPE_USAGE_DEFAULT:
+      case PIPE_USAGE_DYNAMIC:
       case PIPE_USAGE_IMMUTABLE:
       case PIPE_USAGE_STATIC:
          buffer->domain = NOUVEAU_BO_VRAM;
          break;
-      case PIPE_USAGE_DYNAMIC:
       case PIPE_USAGE_STAGING:
       case PIPE_USAGE_STREAM:
          buffer->domain = NOUVEAU_BO_GART;
@@ -402,6 +563,8 @@ fail:
    return NULL;
 }
 
+
+/* User buffers. */
 
 struct pipe_resource *
 nouveau_user_buffer_create(struct pipe_screen *pscreen, void *ptr,
@@ -451,6 +614,7 @@ boolean
 nouveau_buffer_migrate(struct nouveau_context *nv,
                        struct nv04_resource *buf, const unsigned new_domain)
 {
+#if 0
    struct nouveau_screen *screen = nv->screen;
    struct nouveau_bo *bo;
    const unsigned old_domain = buf->domain;
@@ -503,6 +667,7 @@ nouveau_buffer_migrate(struct nouveau_context *nv,
 
    assert(buf->domain == new_domain);
    return TRUE;
+#endif
 }
 
 /* Migrate data from glVertexAttribPointer(non-VBO) user buffers to GART.

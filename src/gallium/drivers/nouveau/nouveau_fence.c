@@ -186,6 +186,8 @@ nouveau_fence_wait(struct nouveau_fence *fence)
    struct nouveau_screen *screen = fence->screen;
    uint32_t spins = 0;
 
+   debug_printf("%s\n", __FUNCTION__);
+
    /* wtf, someone is waiting on a fence in flush_notify handler? */
    assert(fence->state != NOUVEAU_FENCE_STATE_EMITTING);
 

@@ -39,6 +39,13 @@ struct nouveau_context {
       unsigned nr_runout;
       unsigned bo_size;
    } scratch;
+
+   /* Mark state involving the give resource as dirty.
+    * The context will hold at most @nref references to the resource.
+    * Returns the number of remaining references (outside the context).
+    */
+   int32_t (*invalidate_resource_storage)(struct nouveau_context *,
+                                          struct pipe_resource *, int32_t nref);
 };
 
 static INLINE struct nouveau_context *
