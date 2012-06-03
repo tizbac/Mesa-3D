@@ -235,6 +235,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
       for (i = 0; i < nvc0->num_vtxbufs; ++i) {
          if (nvc0->vtxbuf[i].buffer == res) {
             nvc0->dirty |= NVC0_NEW_ARRAYS;
+            nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_VTX);
             if (!--nref)
                return 0;
          }
@@ -243,6 +244,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
    if (res->bind & PIPE_BIND_INDEX_BUFFER) {
       if (nvc0->idxbuf.buffer == res) {
          nvc0->dirty |= NVC0_NEW_IDXBUF;
+         nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_IDX);
          if (!--nref)
             return 0;
       }
@@ -254,6 +256,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
          if (nvc0->constbuf[s][i].u.buf == res) {
             nvc0->dirty |= NVC0_NEW_CONSTBUF;
             nvc0->constbuf_dirty[s] |= 1 << i;
+            nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_CB(s, i));
             if (!--nref)
                return 0;
          }
@@ -267,6 +270,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
          if (nvc0->tfbbuf[i]->buffer == res) {
             nvc0->dirty |= NVC0_NEW_TFB_TARGETS;
             nvc0->tfbbuf_dirty |= 1 << i;
+            nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_TFB);
             nvc0_so_target(nvc0->tfbbuf[i])->clean = TRUE;
             if (!--nref)
                return 0;
@@ -280,6 +284,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
          if (nvc0->textures[s][i]->texture == res) {
             nvc0->dirty |= NVC0_NEW_TEXTURES;
             nvc0->textures_dirty[s] |= 1 << i;
+            nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_TEX(s, i));
             if (!--nref)
                return 0;
          }
@@ -291,6 +296,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
       for (i = 0; i < nvc0->framebuffer.nr_cbufs; ++i) {
          if (nvc0->framebuffer.cbufs[i]->texture == res) {
             nvc0->dirty |= NVC0_NEW_FRAMEBUFFER;
+            nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_FB);
             if (!--nref)
                return 0;
          }
@@ -299,6 +305,7 @@ nvc0_invalidate_resource_storage(struct nouveau_context *nv,
    if (res->bind & PIPE_BIND_DEPTH_STENCIL) {
       if (nvc0->framebuffer.zsbuf->texture == res) {
          nvc0->dirty |= NVC0_NEW_FRAMEBUFFER;
+         nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_FB);
          if (!--nref)
             return 0;
       }
