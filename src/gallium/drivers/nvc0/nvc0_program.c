@@ -541,6 +541,8 @@ nvc0_program_dump(struct nvc0_program *prog)
 }
 #endif
 
+static unsigned long max_gpr_sum = 0;
+
 boolean
 nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset)
 {
@@ -583,6 +585,10 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset)
    prog->immd_size = info->immd.bufSize;
    prog->relocs = info->bin.relocData;
    prog->max_gpr = MAX2(4, (info->bin.maxGPR + 1));
+
+   if (prog->max_gpr >= 32)
+      max_gpr_sum += prog->max_gpr;
+   debug_printf("max_gpr_sum = %lu\n", max_gpr_sum);
 
    prog->vp.need_vertex_id = info->io.vertexId < PIPE_MAX_SHADER_INPUTS;
 

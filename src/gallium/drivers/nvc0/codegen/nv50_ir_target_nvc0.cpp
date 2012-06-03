@@ -683,7 +683,7 @@ unsigned int TargetNVC0::getMaxConcurrencyRegLimit() const
 {
    switch (chipset & ~0xf) {
    case 0xe0:
-      return 32;
+      return 16;
    case 0xc0:
    case 0xd0:
    default:

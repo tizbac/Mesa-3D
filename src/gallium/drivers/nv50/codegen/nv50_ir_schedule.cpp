@@ -66,8 +66,10 @@ private:
    void recordMemoryAccess(Instruction *);
 
    inline SchedInfo& getInfo(const Instruction *);
+   inline const SchedInfo& getConstInfo(const Instruction *) const;
 
    void countLValueUses(BasicBlock *);
+   void countLocalUses(BasicBlock *bb, const LValue *);
    void buildDependencyGraph(Instruction *);
    void addDependency(const Instruction *dependency, const Instruction *);
    void dumpDependencyGraph();
@@ -77,6 +79,10 @@ private:
    void checkRAW(const Instruction *);
    void checkWAR(const Instruction *);
    void checkWAW(const Instruction *);
+
+   void getUseStats(const Instruction *, int &lvalUses, int &lastGprUses);
+   unsigned int countGPRDefs(const Instruction *) const;
+   unsigned int countUncoveredNodes(const Instruction *) const;
 
    void retire(Instruction *);
    Instruction *selectNext();   
@@ -149,6 +155,13 @@ isBarrier(const Instruction *insn)
 
 InstrScheduling::SchedInfo&
 InstrScheduling::getInfo(const Instruction *insn)
+{
+   assert(insn);
+   return annot.at(insn->id);
+}
+
+const InstrScheduling::SchedInfo&
+InstrScheduling::getConstInfo(const Instruction *insn) const
 {
    assert(insn);
    return annot.at(insn->id);
@@ -252,7 +265,7 @@ InstrScheduling::visit(Function *fn)
 
    regUnitLog2 = targ->getFileUnit(FILE_GPR);
    regPressure = 0;
-   regPressureLimit = 8;//targ->getMaxConcurrencyRegLimit();
+   regPressureLimit = targ->getMaxConcurrencyRegLimit();
 
    groupTex = targ->getChipset() >= 0xc0;
 
@@ -354,10 +367,7 @@ void
 InstrScheduling::retire(Instruction *insn)
 {
    SchedInfo& sinfo = getInfo(insn);
-#if 0
-   INFO("retiring "); insn->print();
-   INFO("=====================================\n");
-#endif
+
    for (Graph::EdgeIterator ei = sinfo.dep.outgoing(); !ei.end(); ei.next()) {
       if (ei.getNode()->incidentCount() == 1) {
          Instruction *insn =
@@ -392,9 +402,6 @@ InstrScheduling::retire(Instruction *insn)
               insn->op == OP_MAD) && !isFloatType(insn->dType))
             res.imul = cycle + 3;
          break;
-      case OPCLASS_TEXTURE:
-         res.tex = cycle + 3;
-         break;
       case OPCLASS_SFU:
          res.sfu = cycle + 3;
          break;
@@ -405,6 +412,12 @@ InstrScheduling::retire(Instruction *insn)
    } else {
       cycle += targ->getThroughput(insn);
    }
+
+#if 1
+   INFO("retired(cycle %i, rp %i/%i): ", cycle, regPressure >> regUnitLog2, regPressureLimit); insn->print();
+   INFO("===\n");
+#endif
+
 }
 
 static int
@@ -420,12 +433,60 @@ isGlobalDef(const Instruction *insn, int d)
    return count;
 }
 
+unsigned int
+InstrScheduling::countGPRDefs(const Instruction *insn) const
+{
+   unsigned int count = 0;
+   for (int d = 0; insn->defExists(d); ++d)
+      if (insn->def(d).getFile() == FILE_GPR)
+         ++count;
+   return count;
+}
+
+void
+InstrScheduling::getUseStats(const Instruction *insn, int &lval, int &last)
+{
+   unsigned int lvalUses = 0;
+   unsigned int lastUses = 0;
+
+   for (int s = 0; insn->srcExists(s); ++s) {
+      LValue *lval = insn->getSrc(s)->asLValue();
+      if (!lval)
+         continue;
+      ++lvalUses;
+      if (lval->reg.file == FILE_GPR)
+         if (!--usesLeft[lval->id])
+            ++lastUses;
+   }
+   for (int s = 0; insn->srcExists(s); ++s) {
+      LValue *lval = insn->getSrc(s)->asLValue();
+      if (lval && lval->reg.file == FILE_GPR)
+         usesLeft[lval->id]++;
+   }
+   lval = lvalUses;
+   last = lastUses;
+}
+
+unsigned int
+InstrScheduling::countUncoveredNodes(const Instruction *insn) const
+{
+   const SchedInfo& sinfo = getConstInfo(insn);
+   unsigned int count = 0;
+   for (Graph::EdgeIterator ei = sinfo.dep.outgoing(); !ei.end(); ei.next())
+      if (ei.getNode()->incidentCount() == 1)
+         ++count;
+   return count;
+}
+
+// prefer producing values with (fewer local uses over links)
 Instruction *
 InstrScheduling::selectNext()
 {
    Instruction *best = NULL;
    int maxScore = std::numeric_limits<int>::min();
-   const bool byRegPressure = (regPressure >> regUnitLog2) > regPressureLimit;
+   const bool byRegPressure = (regPressure >> regUnitLog2) >= regPressureLimit;
+
+   INFO("selecting by %s ...\n", byRegPressure ? "register pressure" : "latency");
 
    for (Graph::EdgeIterator ei = root.outgoing(); !ei.end(); ei.next()) {
       Instruction *insn = reinterpret_cast<Instruction *>(ei.getNode()->data);
@@ -460,14 +521,18 @@ InstrScheduling::selectNext()
                score -= 8;
          }
       } else {
-         score = MIN2((cycle - sinfo.depCycle) * 4, 16);
+         score = cycle - sinfo.depCycle;
+         if (score >= 0)
+            score += 100;
       }
 
       // 3rd criterion: many dependencies resolved
-      score += sinfo.dep.outgoingCount();
+      for (Graph::EdgeIterator ei = sinfo.dep.outgoing(); !ei.end(); ei.next())
+         score += (ei.getNode()->incidentCount() == 1) ? 25 : 5;
 
-      if (groupTex && isTextureOp(insn->op) && isTextureOp(retired->op))
-         score += 64;
+      if (groupTex &&
+          retired && isTextureOp(insn->op) && isTextureOp(retired->op))
+         score += 250;
 
       if (score > maxScore) {
          maxScore = score;
@@ -493,6 +558,8 @@ InstrScheduling::visit(BasicBlock *bb)
    countLValueUses(bb);
 
    regPressure = bb->liveSet.popCount(); // XXX: non-GPRs
+
+   INFO("initial register pressure: %i\n", regPressure);
 
    // INFO("going to schedule instructions of BB:%i\n", bb->getId());
 
@@ -523,6 +590,25 @@ runSchedulingPass(Program *prog)
 }
 
 void
+InstrScheduling::countLocalUses(BasicBlock *bb, const LValue *lval)
+{
+   if (usesLeft[lval->id])
+      return;
+   for (Value::UseCIterator u = lval->uses.begin(); u != lval->uses.end();
+        ++u) {
+      BasicBlock *uBB = (*u)->getInsn()->bb;
+      assert(uBB);
+      if (uBB == bb) {
+         usesLeft[lval->id]++;
+      } else
+      if (!bb->dominatedBy(uBB) && uBB->reachableBy(bb, NULL)) {
+         // TODO: compute and use set of live-outs, should be faster
+         usesLeft[lval->id] = std::numeric_limits<int>::max();
+      }
+   }
+}
+
+void
 InstrScheduling::countLValueUses(BasicBlock *bb)
 {
    Instruction *insn;
@@ -538,19 +624,8 @@ InstrScheduling::countLValueUses(BasicBlock *bb)
    for (insn = bb->getEntry(); insn; insn = insn->next) {
       for (s = 0; insn->srcExists(s); ++s) {
          LValue *src = insn->getSrc(s)->asLValue();
-         if (src && !usesLeft.at(src->id)) {
-            for (Value::UseIterator u = src->uses.begin();
-                 u != src->uses.end(); ++u) {
-               BasicBlock *uBB = (*u)->getInsn()->bb;
-               assert(uBB);
-               if (uBB == bb)
-                  usesLeft[src->id]++;
-               else // TODO: compute and use set of live-outs, should be faster
-               if (!bb->dominatedBy(uBB) &&
-                   uBB->reachableBy(bb, NULL))
-                  usesLeft[src->id] = std::numeric_limits<int>::max();
-            }
-         }
+         if (src)
+            countLocalUses(bb, src);
       }
    }
 #if 0
