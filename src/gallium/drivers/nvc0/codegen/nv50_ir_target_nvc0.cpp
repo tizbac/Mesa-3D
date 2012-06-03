@@ -443,8 +443,10 @@ TargetNVC0::insnCanLoad(const Instruction *i, int s,
 }
 
 bool
-TargetNVC0::isAccessSupported(DataFile file, DataType ty) const
+TargetNVC0::isAccessSupported(DataFile file, DataType ty, int32_t immOff) const
 {
+   if (immOff > 0x7fff || immOff < -0x8000)
+      return false;
    if (ty == TYPE_NONE)
       return false;
    if (file == FILE_MEMORY_CONST && getChipset() >= 0xe0) // wrong encoding ?

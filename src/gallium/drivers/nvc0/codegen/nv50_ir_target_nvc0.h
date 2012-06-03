@@ -45,7 +45,7 @@ public:
    virtual bool insnCanLoad(const Instruction *insn, int s,
                             const Instruction *ld) const;
    virtual bool isOpSupported(operation, DataType) const;
-   virtual bool isAccessSupported(DataFile, DataType) const;
+   virtual bool isAccessSupported(DataFile, DataType, int32_t immOff) const;
    virtual bool isModSupported(const Instruction *, int s, Modifier) const;
    virtual bool isSatSupported(const Instruction *) const;
    virtual bool isPostMultiplySupported(operation, float, int& e) const;

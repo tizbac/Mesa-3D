@@ -94,6 +94,7 @@ public:
    Value *loadImm(Value *dst, float);
    Value *loadImm(Value *dst, uint32_t);
    Value *loadImm(Value *dst, uint64_t);
+   Value *loadImm(Value *dst, double d);
 
    Value *loadImm(Value *dst, int i) { return loadImm(dst, (uint32_t)i); }
 
@@ -280,6 +281,17 @@ BuildUtil::mkOp3v(operation op, DataType ty, Value *dst,
 {
    mkOp3(op, ty, dst, src0, src1, src2);
    return dst->asLValue();
+}
+
+inline Value *
+BuildUtil::loadImm(Value *dst, double d)
+{
+   union {
+      double d;
+      uint64_t u;
+   } u;
+   u.d = d;
+   return loadImm(dst, u.u);
 }
 
 bool

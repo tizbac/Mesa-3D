@@ -233,6 +233,11 @@ public:
 private:
    virtual bool visit(BasicBlock *);
 
+   Instruction *traverseMoves(Instruction *);
+
+   void foldPointerAdds(Instruction *);
+   Instruction *addShlToShlAdd(Instruction *, const ImmediateValue&);
+
    void expr(Instruction *, ImmediateValue&, ImmediateValue&);
    void opnd(Instruction *, ImmediateValue&, int s);
 
@@ -248,17 +253,143 @@ private:
    BuildUtil bld;
 };
 
+Instruction *
+ConstantFolding::traverseMoves(Instruction *mov)
+{
+   while (mov && mov->op == OP_MOV &&
+          !mov->getPredicate() &&
+          mov->getDef(0)->reg.file == mov->getSrc(0)->reg.file &&
+          mov->getSrc(0)->getInsn())
+      mov = mov->getSrc(0)->getInsn();
+   return mov;
+}
+
 // TODO: remember generated immediates and only revisit these
 bool
 ConstantFolding::foldAll(Program *prog)
 {
+   const unsigned int maxRounds = std::min(1 << prog->optLevel, 8);
    unsigned int iterCount = 0;
    do {
       foldCount = 0;
       if (!run(prog))
          return false;
-   } while (foldCount && ++iterCount < 2);
+   } while (foldCount && ++iterCount < maxRounds);
    return true;
+}
+
+// add $r1, $r0, imm
+// shl $r2, $r1, cnt
+// -------------------
+// shl $r3, $r0, cnt
+// add $r2, $r3, (imm << cnt)
+Instruction *
+ConstantFolding::addShlToShlAdd(Instruction *shl, const ImmediateValue &cnt)
+{
+   ImmediateValue imm;
+   Instruction *add = shl->getSrc(0)->getInsn();
+   int s;
+   uint8_t cntVal;
+
+   if (!add || add->op != OP_ADD || isFloatType(add->dType))
+      return shl;
+   for (s = 0; s < 2; ++s)
+      if (add->src(s).getImmediate(imm))
+         break;
+   if (s >= 2)
+      return shl;
+
+   if (add->getDef(0)->refCount() > 1 || add->defExists(1))
+      shl->bb->insertBefore(shl, (add = cloneForward(func, add)));
+   bld.setPosition(shl, false);
+
+   add->op = OP_SHL;
+   if (!s)
+      add->setSrc(0, add->getSrc(1));
+   add->setSrc(1, shl->getSrc(1));
+
+   shl->op = OP_ADD;
+   cntVal = cnt.reg.data.u32;
+   if (shl->subOp == NV50_IR_SUBOP_SHIFT_WRAP)
+      cntVal &= 31;
+   shl->setSrc(0, add->getDef(0));
+   shl->setSrc(1, bld.loadImm(NULL, imm.reg.data.u32 << cntVal));
+   return shl;
+}
+
+// add $r0, $r2, c
+// add $r1, $r0, a
+// ld/st m[$r1+b]
+// --------------------
+// add $r0, $r2, c
+// mov $r1, $r0
+// ld/st m[$r1+(a+b)]
+// --------------------
+void
+ConstantFolding::foldPointerAdds(Instruction *ldst)
+{
+   ImmediateValue imm;
+   int s;
+   int a;
+   int32_t offset = ldst->getSrc(0)->reg.data.offset;
+
+   LValue *ptr = ldst->getIndirect(0, 0)->asLValue();
+   if (!ptr)
+      return;
+   Instruction *add = NULL;
+   Instruction *arl = traverseMoves(ptr->getInsn());
+
+   if (arl->op == OP_SHL && arl->src(1).getImmediate(imm))
+      arl = addShlToShlAdd(arl, imm);
+
+   if (arl->op != OP_ADD || isFloatType(arl->dType))
+      return;
+
+   for (s = 0; s < 2; ++s)
+      if (arl->src(s).getImmediate(imm))
+         break;
+   if (s >= 2) {
+      // pull through 1 level only
+      for (a = 0; a < 2; ++a) {
+         add = traverseMoves(arl->getSrc(a)->getInsn());
+         if (add && add->op == OP_ADD && !isFloatType(add->dType))
+            break;
+      }
+      if (a >= 2)
+         return;
+      for (s = 0; s < 2; ++s)
+         if (add->src(s).getImmediate(imm))
+            break;
+      if (s >= 2)
+         return;
+   } else {
+      a = 0; // silence warning
+      add = arl;
+   }
+
+   // immediate add found, make the modifications
+   offset += imm.reg.data.offset;
+   if (!prog->getTarget()->isAccessSupported(
+          ldst->src(0).getFile(), ldst->dType, offset))
+      return;
+
+   if (add != arl) {
+      ldst->bb->insertBefore(ldst, (arl = cloneForward(func, arl)));
+      arl->setSrc(a ? 1 : 0, add->getSrc(s ? 0 : 1));
+      ldst->setIndirect(0, 0, arl->getDef(0));
+   } else {
+      Value *ptr = arl->getSrc(s ? 0 : 1);
+      if (ptr->getInsn())
+         ptr = traverseMoves(ptr->getInsn())->getDef(0);
+      ldst->setIndirect(0, 0, ptr);
+   }
+
+   // adjust memory offset
+   if (ldst->getSrc(0)->refCount() > 1)
+      ldst->setSrc(0, cloneShallow(func, ldst->getSrc(0)));
+   ldst->getSrc(0)->asSym()->setOffset(offset);
+
+   foldCount++;
 }
 
 bool
@@ -282,6 +413,11 @@ ConstantFolding::visit(BasicBlock *bb)
       else
       if (i->srcExists(1) && i->src(1).getImmediate(src1))
          opnd(i, src1, 1);
+
+      if (i->op == OP_LOAD || i->op == OP_STORE || i->op == OP_VFETCH ||
+          i->op == OP_EXPORT)
+         if (i->src(0).isIndirect(0))
+            foldPointerAdds(i);
    }
    return true;
 }
@@ -667,6 +803,37 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
          i->op = i->src(0).mod.getOp();
          if (i->op != OP_CVT)
             i->src(0).mod = Modifier(0);
+      } else
+      if (i->sType == TYPE_F32 || i->sType == TYPE_F64 ||
+          i->sType == TYPE_U32 || i->sType == TYPE_S32) {
+         ImmediateValue imm2;
+         Instruction *add = i->getSrc(t)->getInsn();
+         if (add->op == OP_ADD && i->sType == add->dType) {
+            int z;
+            for (z = 0; z < 2; ++z)
+               if (add->src(z).getImmediate(imm2))
+                  break;
+            if (z >= 2)
+               break;
+            Value *sum;
+            bld.setPosition(i, false);
+            switch (add->dType) {
+            case TYPE_U32:
+            case TYPE_S32:
+               sum = bld.loadImm(NULL, imm2.reg.data.u32 + imm0.reg.data.u32);
+               break;
+            case TYPE_F32:
+               sum = bld.loadImm(NULL, imm2.reg.data.f32 + imm0.reg.data.f32);
+               break;
+            default:
+               assert(add->dType == TYPE_U64);
+               sum = bld.loadImm(NULL, imm2.reg.data.f64 + imm0.reg.data.f64);
+               break;
+            }
+            i->setSrc(t, add->src(z ? 0 : 1));
+            i->setSrc(s, sum);
+            i->src(s).mod = Modifier(0);
+         }
       }
       break;
 
@@ -2368,6 +2535,11 @@ Program::optimizeSSA(int level)
    RUN_PASS(2, AlgebraicOpt, run);
    RUN_PASS(2, ModifierFolding, run); // before load propagation -> less checks
    RUN_PASS(1, ConstantFolding, foldAll);
+   {
+      // scoop up duplicate pointers if we do memory opt
+      RUN_PASS(2, CopyPropagation, run);
+      RUN_PASS(2, LocalCSE, run);
+   }
    RUN_PASS(1, LoadPropagation, run);
    RUN_PASS(2, MemoryOpt, run);
    RUN_PASS(2, LocalCSE, run);
