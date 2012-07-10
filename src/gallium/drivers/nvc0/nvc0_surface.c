@@ -951,6 +951,7 @@ nvc0_resource_resolve(struct pipe_context *pipe,
    struct pipe_resource *dst = info->dst.res;
    float x0, x1, y0, y1;
    float x_range, y_range;
+   uint8_t d_ms_x, d_ms_y;
 
    /* Would need more shader variants or, better, just change the TIC target.
     * But no API creates 3D MS textures ...
@@ -1001,12 +1002,22 @@ nvc0_resource_resolve(struct pipe_context *pipe,
     * arranged in a way to yield the desired offset and scale.
     */
 
+   debug_printf("dst = (%u .. %u) x (%u .. %u)\n",
+                info->dst.x0, info->dst.x1,
+                info->dst.y0, info->dst.y1);
+
+   d_ms_x = nv50_miptree(dst)->ms_x;
+   d_ms_y = nv50_miptree(dst)->ms_y;
+
    BEGIN_NVC0(push, NVC0_3D(SCISSOR_HORIZ(0)), 2);
-   PUSH_DATA (push, (info->dst.x1 << 16) | info->dst.x0);
-   PUSH_DATA (push, (info->dst.y1 << 16) | info->dst.y0);
+   PUSH_DATA (push, ((info->dst.x1 << d_ms_x) << 16) | (info->dst.x0 << d_ms_x));
+   PUSH_DATA (push, ((info->dst.y1 << d_ms_y) << 16) | (info->dst.y0 << d_ms_y));
 
    IMMED_NVC0(push, NVC0_3D(VERTEX_BEGIN_GL),
               NVC0_3D_VERTEX_BEGIN_GL_PRIMITIVE_TRIANGLES);
+
+   debug_printf("x0 = %f, y0 = %f, x1 = %f, y1 = %f\n",
+                x0, y0, x1, y1);
 
    BEGIN_NVC0(push, NVC0_3D(VTX_ATTR_DEFINE), 3);
    PUSH_DATA (push, 0x74201);

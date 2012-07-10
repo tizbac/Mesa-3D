@@ -491,48 +491,27 @@ InstrScheduling::selectNext()
    for (Graph::EdgeIterator ei = root.outgoing(); !ei.end(); ei.next()) {
       Instruction *insn = reinterpret_cast<Instruction *>(ei.getNode()->data);
       SchedInfo& sinfo = getInfo(insn);
-      int score = 0;
+      int score;
+      unsigned int uncovered = countUncoveredNodes(insn);
+      int numDefs;
+      int numUses, numLast;
+      int ready = cycle - sinfo.depCycle;
+
+      getUseStats(insn, numUses, numLast);
+      numDefs = countGPRDefs(insn);
 
       if (byRegPressure) {
-         for (int s = 0; insn->srcExists(s); ++s) {
-            LValue *lval = insn->getSrc(s)->asLValue();
-            if (!lval)
-               continue;
-            if (!--usesLeft.at(lval->id)) {
-               score += 2;
-               if (lval->reg.file == FILE_GPR)
-                  score += 4 * lval->reg.size;
-            }
-            Instruction *gen = lval->getInsn();
-            if (gen && !gen->bb)
-               score += MIN2(16, cycle - getInfo(gen).cycle); // def-use spring
-         }
-         // reset use counts
-         for (int s = 0; insn->srcExists(s); ++s) {
-            LValue *lval = insn->getSrc(s)->asLValue();
-            if (lval)
-               usesLeft[lval->id]++;
-         }
-         for (int d = 0; insn->defExists(d); ++d) {
-            score -= 2;
-            if (insn->getDef(d)->reg.file == FILE_GPR)
-               score -= 4 * insn->getDef(d)->reg.size;
-            if (isGlobalDef(insn, d))
-               score -= 8;
-         }
+         score = ((numLast * 10 + numUses) - numDefs) * 1000;
+         score += uncovered * 100;
       } else {
-         score = cycle - sinfo.depCycle;
-         if (score >= 0)
-            score += 100;
+         score = (ready >= 0) ? 1000 : ready;
+         score += uncovered * 100;
+         score += ((numLast * 10 + numUses) - numDefs) * 100;
+
+         if (groupTex &&
+             retired && isTextureOp(insn->op) && isTextureOp(retired->op))
+            score += 500;
       }
-
-      // 3rd criterion: many dependencies resolved
-      for (Graph::EdgeIterator ei = sinfo.dep.outgoing(); !ei.end(); ei.next())
-         score += (ei.getNode()->incidentCount() == 1) ? 25 : 5;
-
-      if (groupTex &&
-          retired && isTextureOp(insn->op) && isTextureOp(retired->op))
-         score += 250;
 
       if (score > maxScore) {
          maxScore = score;
