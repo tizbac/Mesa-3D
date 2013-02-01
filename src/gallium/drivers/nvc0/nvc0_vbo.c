@@ -565,6 +565,8 @@ nvc0_draw_arrays(struct nvc0_context *nvc0,
    unsigned prim;
 
    if (nvc0->state.index_bias) {
+      /* index_bias is implied 0 if !info->indexed (really ?) */
+      /* TODO: can we deactivate it for the VERTEX_BUFFER_FIRST command ? */
       PUSH_SPACE(push, 1);
       IMMED_NVC0(push, NVC0_3D(VB_ELEMENT_BASE), 0);
       nvc0->state.index_bias = 0;
@@ -781,6 +783,42 @@ nvc0_draw_stream_output(struct nvc0_context *nvc0,
    }
 }
 
+static void
+nvc0_draw_indirect(struct nvc0_context *nvc0, const struct pipe_draw_info *info)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   struct nv04_resource *buf = nv04_resource(info->indirect);
+   unsigned size;
+   const uint32_t offset = buf->offset + info->indirect_offset;
+
+   if (buf->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING) {
+      buf->status &= ~NOUVEAU_BUFFER_STATUS_GPU_WRITING;
+      /* must make FIFO wait for engines idle before continuing to process */
+      IMMED_NVC0(push, SUBC_3D(NV10_SUBCHAN_REF_CNT), 0);
+   }
+
+   PUSH_SPACE(push, 8);
+   if (info->indexed) {
+      assert(nvc0->idxbuf.buffer);
+      assert(nouveau_resource_mapped_by_gpu(nvc0->idxbuf.buffer));
+      size = 5 * 4;
+      BEGIN_1IC0(push, NVC0_3D(MACRO_DRAW_ELEMENTS_INDIRECT), 1 + size / 4);
+   } else {
+      if (nvc0->state.index_bias) {
+         /* index_bias is implied 0 if !info->indexed (really ?) */
+         IMMED_NVC0(push, NVC0_3D(VB_ELEMENT_BASE), 0);
+         nvc0->state.index_bias = 0;
+      }
+      size = 4 * 4;
+      BEGIN_1IC0(push, NVC0_3D(MACRO_DRAW_ARRAYS_INDIRECT), 1 + size / 4);
+   }
+   PUSH_DATA(push, nvc0_prim_gl(info->mode));
+#define NVC0_IB_ENTRY_1_NO_PREFETCH (1 << (31 - 8))
+   nouveau_pushbuf_space(push, 0, 0, 1);
+   nouveau_pushbuf_data(push,
+                        buf->bo, offset, NVC0_IB_ENTRY_1_NO_PREFETCH | size);
+}
+
 void
 nvc0_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info)
 {
@@ -863,16 +901,22 @@ nvc0_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info)
             shorten = FALSE;
       }
 
-      nvc0_draw_elements(nvc0, shorten,
-                         info->mode, info->start, info->count,
-                         info->instance_count, info->index_bias);
+      if (unlikely(info->indirect))
+         nvc0_draw_indirect(nvc0, info);
+      else
+         nvc0_draw_elements(nvc0, shorten,
+                            info->mode, info->start, info->count,
+                            info->instance_count, info->index_bias);
    } else
    if (unlikely(info->count_from_stream_output)) {
       nvc0_draw_stream_output(nvc0, info);
    } else {
-      nvc0_draw_arrays(nvc0,
-                       info->mode, info->start, info->count,
-                       info->instance_count);
+      if (unlikely(info->indirect))
+         nvc0_draw_indirect(nvc0, info);
+      else
+         nvc0_draw_arrays(nvc0,
+                          info->mode, info->start, info->count,
+                          info->instance_count);
    }
    push->kick_notify = nvc0_default_kick_notify;
 

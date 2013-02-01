@@ -176,6 +176,8 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_VERTEX_ELEMENT_SRC_OFFSET_4BYTE_ALIGNED_ONLY:
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
       return 0;
+   case PIPE_CAP_DRAW_INDIRECT:
+      return 1;
    default:
       NOUVEAU_ERR("unknown PIPE_CAP %d\n", param);
       return 0;
@@ -313,6 +315,8 @@ nvc0_graph_set_macro(struct nvc0_screen *screen, uint32_t m, unsigned pos,
    struct nouveau_pushbuf *push = screen->base.pushbuf;
 
    size /= 4;
+
+   assert((pos + size) <= 0x800);
 
    BEGIN_NVC0(push, SUBC_3D(NVC0_GRAPH_MACRO_ID), 2);
    PUSH_DATA (push, (m - 0x3800) / 8);
@@ -748,6 +752,8 @@ nvc0_screen_create(struct nouveau_device *dev)
    MK_MACRO(NVC0_3D_MACRO_GP_SELECT, nvc0_9097_gp_select);
    MK_MACRO(NVC0_3D_MACRO_POLYGON_MODE_FRONT, nvc0_9097_poly_mode_front);
    MK_MACRO(NVC0_3D_MACRO_POLYGON_MODE_BACK, nvc0_9097_poly_mode_back);
+   MK_MACRO(NVC0_3D_MACRO_DRAW_ARRAYS_INDIRECT, nvc0_9097_draw_arrays_indirect);
+   MK_MACRO(NVC0_3D_MACRO_DRAW_ELEMENTS_INDIRECT, nvc0_9097_draw_elts_indirect);
 
    BEGIN_NVC0(push, NVC0_3D(RASTERIZE_ENABLE), 1);
    PUSH_DATA (push, 1);
