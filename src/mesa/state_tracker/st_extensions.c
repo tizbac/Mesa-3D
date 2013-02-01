@@ -398,7 +398,9 @@ void st_init_extensions(struct st_context *st)
       { o(MESA_texture_array),               PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS         },
 
       { o(OES_standard_derivatives),         PIPE_CAP_SM3                              },
-      { o(ARB_texture_cube_map_array),       PIPE_CAP_CUBE_MAP_ARRAY                   }
+      { o(ARB_texture_cube_map_array),       PIPE_CAP_CUBE_MAP_ARRAY                   },
+      { o(ARB_draw_indirect),                PIPE_CAP_DRAW_INDIRECT                    },
+      { o(ARB_multi_draw_indirect),          PIPE_CAP_DRAW_INDIRECT                    }
    };
 
    /* Required: render target and sampler support */
