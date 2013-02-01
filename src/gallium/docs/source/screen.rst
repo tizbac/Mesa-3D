@@ -137,6 +137,9 @@ The integer capabilities:
 * ``PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT``: Describes the required
   alignment for pipe_sampler_view::u.buf.first_element, in bytes.
   If a driver does not support first/last_element, it should return 0.
+* ``PIPE_CAP_DRAW_INDIRECT``: Whether the driver supports taking draw arguments
+  { count, instance_count, start, index_bias } from a PIPE_BUFFER resource.
+  See pipe_draw_info.
 
 
 .. _pipe_capf:

@@ -27,6 +27,7 @@
 
 
 #include "util/u_debug.h"
+#include "util/u_inlines.h"
 #include "util/u_math.h"
 #include "util/u_format.h"
 #include "util/u_draw.h"
@@ -122,4 +123,42 @@ util_draw_max_index(
    }
 
    return max_index + 1;
+}
+
+
+void
+util_draw_indirect(struct pipe_context *pipe,
+                   const struct pipe_draw_info *_info)
+{
+   struct pipe_draw_info info;
+   struct pipe_transfer *transfer;
+   uint32_t *params;
+
+   assert(_info->indirect);
+   assert(!_info->count_from_stream_output);
+
+   memcpy(&info, _info, sizeof(info));
+
+   params = (uint32_t *)
+      pipe_buffer_map_range(pipe,
+                            _info->indirect,
+                            _info->indirect_offset,
+                            _info->indexed ? (4 * 4) : (3 * 4),
+                            PIPE_TRANSFER_READ,
+                            &transfer);
+   if (!transfer) {
+      debug_printf("%s: failed to map indirect buffer\n", __FUNCTION__);
+      return;
+   }
+
+   info.count = params[0];
+   info.instance_count = params[1];
+   info.start = params[2];
+   info.index_bias = _info->indexed ? params[3] : 0;
+   info.start_instance = _info->indexed ? params[4] : params[3];
+   info.indirect = NULL;
+
+   pipe_buffer_unmap(pipe, transfer);
+
+   pipe->draw_vbo(pipe, &info);
 }

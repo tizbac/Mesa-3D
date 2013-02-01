@@ -155,6 +155,7 @@ static int r300_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
         case PIPE_CAP_TEXTURE_MULTISAMPLE:
         case PIPE_CAP_CUBE_MAP_ARRAY:
         case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
+        case PIPE_CAP_DRAW_INDIRECT:
             return 0;
 
         /* SWTCL-only features. */
