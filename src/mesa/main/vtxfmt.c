@@ -147,6 +147,13 @@ install_vtxfmt(struct gl_context *ctx, struct _glapi_table *tab,
                                                vfmt->DrawTransformFeedbackStreamInstanced);
    }
 
+   if (_mesa_is_desktop_gl(ctx)) {
+      SET_DrawArraysIndirect(tab, vfmt->DrawArraysIndirect);
+      SET_DrawElementsIndirect(tab, vfmt->DrawElementsIndirect);
+      SET_MultiDrawArraysIndirect(tab, vfmt->MultiDrawArraysIndirect);
+      SET_MultiDrawElementsIndirect(tab, vfmt->MultiDrawElementsIndirect);
+   }
+
    /* Originally for GL_NV_vertex_program, this is also used by dlist.c */
    if (ctx->API == API_OPENGL_COMPAT) {
       SET_VertexAttrib1fNV(tab, vfmt->VertexAttrib1fNV);

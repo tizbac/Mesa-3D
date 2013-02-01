@@ -1065,6 +1065,18 @@ typedef struct {
                                                            GLuint name,
                                                            GLuint stream,
                                                            GLsizei primcount);
+   void (GLAPIENTRYP DrawArraysIndirect)(GLenum mode,
+                                         const GLvoid *indirect);
+   void (GLAPIENTRYP DrawElementsIndirect)(GLenum mode, GLenum type,
+                                           const GLvoid *indirect);
+   void (GLAPIENTRYP MultiDrawArraysIndirect)(GLenum mode,
+                                              const GLvoid *indirect,
+                                              GLsizei primcount,
+                                              GLsizei stride);
+   void (GLAPIENTRYP MultiDrawElementsIndirect)(GLenum mode, GLenum type,
+                                                const GLvoid *indirect,
+                                                GLsizei primcount,
+                                                GLsizei stride);
    /*@}*/
 
    /**

@@ -542,7 +542,7 @@ vbo_handle_primitive_restart(struct gl_context *ctx,
    } else {
       /* Call driver directly for draw_prims */
       vbo->draw_prims(ctx, prim, nr_prims, ib,
-                      index_bounds_valid, min_index, max_index, NULL);
+                      index_bounds_valid, min_index, max_index, NULL, NULL);
    }
 }
 
@@ -607,7 +607,7 @@ vbo_draw_arrays(struct gl_context *ctx, GLenum mode, GLint start,
          /* draw one or two prims */
          check_buffers_are_unmapped(exec->array.inputs);
          vbo->draw_prims(ctx, prim, primCount, NULL,
-                         GL_TRUE, start, start + count - 1, NULL);
+                         GL_TRUE, start, start + count - 1, NULL, NULL);
       }
    }
    else {
@@ -618,7 +618,7 @@ vbo_draw_arrays(struct gl_context *ctx, GLenum mode, GLint start,
       check_buffers_are_unmapped(exec->array.inputs);
       vbo->draw_prims(ctx, prim, 1, NULL,
                       GL_TRUE, start, start + count - 1,
-                      NULL);
+                      NULL, NULL);
    }
 
    if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH) {
@@ -1285,7 +1285,7 @@ vbo_draw_transform_feedback(struct gl_context *ctx, GLenum mode,
 
    check_buffers_are_unmapped(exec->array.inputs);
    vbo->draw_prims(ctx, prim, 1, NULL,
-                   GL_TRUE, 0, 0, obj);
+                   GL_TRUE, 0, 0, obj, NULL);
 
    if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH) {
       _mesa_flush(ctx);
@@ -1359,6 +1359,245 @@ vbo_exec_DrawTransformFeedbackStreamInstanced(GLenum mode, GLuint name,
    vbo_draw_transform_feedback(ctx, mode, obj, stream, primcount);
 }
 
+static void
+vbo_validated_drawarraysindirect(struct gl_context *ctx,
+                                 GLenum mode, const GLvoid *indirect)
+{
+   struct vbo_context *vbo = vbo_context(ctx);
+   struct vbo_exec_context *exec = &vbo->exec;
+   struct _mesa_prim prim[1];
+
+   vbo_bind_arrays(ctx);
+
+   memset(prim, 0, sizeof(prim));
+   prim[0].begin = 1;
+   prim[0].end = 1;
+   prim[0].mode = mode;
+   prim[0].indirect_offset = (GLsizeiptr)indirect;
+
+   /* NOTE: We do NOT want to handle primitive restart here, nor perform any
+    * other checks that require knowledge of the values in the command buffer.
+    * That would deafeat the whole purpose of this function.
+    * (XXX: maybe modify/remove snarky comment below)
+    * Just don't advertise ARB_draw_indirect if your card sucks.
+    */
+
+   check_buffers_are_unmapped(exec->array.inputs);
+   vbo->draw_prims(ctx, prim, 1,
+                   NULL, GL_TRUE, 0, 0,
+                   NULL,
+                   ctx->DrawIndirectBuffer);
+
+   if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH)
+      _mesa_flush(ctx);
+}
+
+static void
+vbo_validated_multidrawarraysindirect(struct gl_context *ctx,
+                                      GLenum mode,
+                                      const GLvoid *indirect,
+                                      GLsizei primcount, GLsizei stride)
+{
+   struct vbo_context *vbo = vbo_context(ctx);
+   struct vbo_exec_context *exec = &vbo->exec;
+   struct _mesa_prim *prim;
+   GLsizei i;
+   GLsizeiptr offset = (GLsizeiptr)indirect;
+
+   if (primcount == 0)
+      return;
+   prim = calloc(1, primcount * sizeof(*prim));
+   if (prim == NULL) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "glMultiDrawArraysIndirect");
+      return;
+   }
+
+   vbo_bind_arrays(ctx);
+
+   memset(prim, 0, primcount * sizeof(*prim));
+   prim[0].begin = 1;
+   prim[primcount - 1].end = 1;
+   for (i = 0; i < primcount; ++i, offset += stride) {
+      prim[i].mode = mode;
+      prim[i].indirect_offset = offset;
+   }
+
+   check_buffers_are_unmapped(exec->array.inputs);
+   vbo->draw_prims(ctx, prim, primcount,
+                   NULL, GL_TRUE, 0, 0,
+                   NULL,
+                   ctx->DrawIndirectBuffer);
+
+   free(prim);
+
+   if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH)
+      _mesa_flush(ctx);
+}
+
+static void
+vbo_validated_drawelementsindirect(struct gl_context *ctx,
+                                   GLenum mode, GLenum type,
+                                   const GLvoid *indirect)
+{
+   struct vbo_context *vbo = vbo_context(ctx);
+   struct vbo_exec_context *exec = &vbo->exec;
+   struct _mesa_index_buffer ib;
+   struct _mesa_prim prim[1];
+
+   vbo_bind_arrays(ctx);
+
+   ib.count = 0; /* unknown */
+   ib.type = type;
+   ib.obj = ctx->Array.ArrayObj->ElementArrayBufferObj;
+   ib.ptr = NULL;
+
+   memset(prim, 0, sizeof(prim));
+   prim[0].begin = 1;
+   prim[0].end = 1;
+   prim[0].mode = mode;
+   prim[0].indexed = 1;
+   prim[0].indirect_offset = (GLsizeiptr)indirect;
+
+   check_buffers_are_unmapped(exec->array.inputs);
+   vbo->draw_prims(ctx, prim, 1,
+                   &ib, GL_TRUE, 0, 0,
+                   NULL,
+                   ctx->DrawIndirectBuffer);
+
+   if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH)
+      _mesa_flush(ctx);
+}
+
+static void
+vbo_validated_multidrawelementsindirect(struct gl_context *ctx,
+                                        GLenum mode, GLenum type,
+                                        const GLvoid *indirect,
+                                        GLsizei primcount, GLsizei stride)
+{
+   struct vbo_context *vbo = vbo_context(ctx);
+   struct vbo_exec_context *exec = &vbo->exec;
+   struct _mesa_index_buffer ib;
+   struct _mesa_prim *prim;
+   GLsizei i;
+   GLsizeiptr offset = (GLsizeiptr)indirect;
+
+   if (primcount == 0)
+      return;
+   prim = calloc(1, primcount * sizeof(*prim));
+   if (prim == NULL) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "glMultiDrawElementsIndirect");
+      return;
+   }
+
+   vbo_bind_arrays(ctx);
+
+   /* NOTE: ElementArrayBufferObj is guaranteed to be a VBO. */
+
+   ib.count = 0; /* unknown */
+   ib.type = type;
+   ib.obj = ctx->Array.ArrayObj->ElementArrayBufferObj;
+   ib.ptr = NULL;
+
+   memset(prim, 0, primcount * sizeof(*prim));
+   prim[0].begin = 1;
+   prim[primcount - 1].end = 1;
+   for (i = 0; i < primcount; ++i, offset += stride) {
+      prim[i].mode = mode;
+      prim[i].indexed = 1;
+      prim[i].indirect_offset = offset;
+   }
+
+   check_buffers_are_unmapped(exec->array.inputs);
+   vbo->draw_prims(ctx, prim, primcount,
+                   &ib, GL_TRUE, 0, 0,
+                   NULL,
+                   ctx->DrawIndirectBuffer);
+
+   free(prim);
+
+   if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH)
+      _mesa_flush(ctx);
+}
+
+/**
+ * Like [Multi]DrawArrays/Elements, but they take most arguments from
+ * a buffer object.
+ */
+static void GLAPIENTRY
+vbo_exec_DrawArraysIndirect(GLenum mode, const GLvoid *indirect)
+{
+   GET_CURRENT_CONTEXT(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_DRAW)
+      _mesa_debug(ctx, "glDrawArraysIndirect(%s, %p)\n",
+                  _mesa_lookup_enum_by_nr(mode), indirect);
+
+   if (!_mesa_validate_DrawArraysIndirect(ctx, mode, indirect))
+      return;
+
+   vbo_validated_drawarraysindirect(ctx, mode, indirect);
+}
+
+static void GLAPIENTRY
+vbo_exec_DrawElementsIndirect(GLenum mode, GLenum type,
+                              const GLvoid *indirect)
+{
+   GET_CURRENT_CONTEXT(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_DRAW)
+      _mesa_debug(ctx, "glDrawElementsIndirect(%s, %s, %p)\n",
+                  _mesa_lookup_enum_by_nr(mode),
+                  _mesa_lookup_enum_by_nr(type), indirect);
+
+   if (!_mesa_validate_DrawElementsIndirect(ctx, mode, type, indirect))
+      return;
+
+   vbo_validated_drawelementsindirect(ctx, mode, type, indirect);
+}
+
+static void GLAPIENTRY
+vbo_exec_MultiDrawArraysIndirect(GLenum mode,
+                                 const GLvoid *indirect,
+                                 GLsizei primcount, GLsizei stride)
+{
+   GET_CURRENT_CONTEXT(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_DRAW)
+      _mesa_debug(ctx, "glMultiDrawArraysIndirect(%s, %p, %i, %i)\n",
+                  _mesa_lookup_enum_by_nr(mode), indirect, primcount, stride);
+
+   if (!_mesa_validate_MultiDrawArraysIndirect(ctx, mode,
+                                               indirect,
+                                               primcount, stride))
+      return;
+
+   vbo_validated_multidrawarraysindirect(ctx, mode,
+                                         indirect,
+                                         primcount, stride);
+}
+
+static void GLAPIENTRY
+vbo_exec_MultiDrawElementsIndirect(GLenum mode, GLenum type,
+                                   const GLvoid *indirect,
+                                   GLsizei primcount, GLsizei stride)
+{
+   GET_CURRENT_CONTEXT(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_DRAW)
+      _mesa_debug(ctx, "glMultiDrawElementsIndirect(%s, %s, %p, %i, %i)\n",
+                  _mesa_lookup_enum_by_nr(mode),
+                  _mesa_lookup_enum_by_nr(type), indirect, primcount, stride);
+
+   if (!_mesa_validate_MultiDrawElementsIndirect(ctx, mode, type,
+                                                 indirect,
+                                                 primcount, stride))
+      return;
+
+   vbo_validated_multidrawelementsindirect(ctx, mode, type,
+                                           indirect,
+                                           primcount, stride);
+}
+
 /**
  * Plug in the immediate-mode vertex array drawing commands into the
  * givven vbo_exec_context object.
@@ -1386,6 +1625,10 @@ vbo_exec_array_init( struct vbo_exec_context *exec )
          vbo_exec_DrawTransformFeedbackInstanced;
    exec->vtxfmt.DrawTransformFeedbackStreamInstanced =
          vbo_exec_DrawTransformFeedbackStreamInstanced;
+   exec->vtxfmt.DrawArraysIndirect = vbo_exec_DrawArraysIndirect;
+   exec->vtxfmt.DrawElementsIndirect = vbo_exec_DrawElementsIndirect;
+   exec->vtxfmt.MultiDrawArraysIndirect = vbo_exec_MultiDrawArraysIndirect;
+   exec->vtxfmt.MultiDrawElementsIndirect = vbo_exec_MultiDrawElementsIndirect;
 }
 
 

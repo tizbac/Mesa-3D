@@ -354,6 +354,7 @@ EXTRA_EXT(ARB_timer_query);
 EXTRA_EXT(ARB_map_buffer_alignment);
 EXTRA_EXT(ARB_texture_cube_map_array);
 EXTRA_EXT(ARB_texture_buffer_range);
+EXTRA_EXT(ARB_draw_indirect);
 
 static const int
 extra_NV_primitive_restart[] = {
@@ -839,6 +840,10 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
       else {
          _mesa_problem(ctx, "driver doesn't implement GetTimestamp");
       }
+      break;
+   /* GL_ARB_draw_indirect */
+   case GL_DRAW_INDIRECT_BUFFER_BINDING:
+      v->value_int = ctx->DrawIndirectBuffer->Name;
       break;
    }
 }

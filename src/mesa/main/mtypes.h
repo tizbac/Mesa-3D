@@ -3051,6 +3051,7 @@ struct gl_extensions
    GLboolean ARB_depth_texture;
    GLboolean ARB_draw_buffers_blend;
    GLboolean ARB_draw_elements_base_vertex;
+   GLboolean ARB_draw_indirect;
    GLboolean ARB_draw_instanced;
    GLboolean ARB_fragment_coord_conventions;
    GLboolean ARB_fragment_program;
@@ -3065,6 +3066,7 @@ struct gl_extensions
    GLboolean ARB_internalformat_query;
    GLboolean ARB_map_buffer_alignment;
    GLboolean ARB_map_buffer_range;
+   GLboolean ARB_multi_draw_indirect;
    GLboolean ARB_occlusion_query;
    GLboolean ARB_occlusion_query2;
    GLboolean ARB_point_sprite;
@@ -3604,6 +3606,8 @@ struct gl_context
    struct gl_query_state Query;  /**< occlusion, timer queries */
 
    struct gl_transform_feedback_state TransformFeedback;
+
+   struct gl_buffer_object *DrawIndirectBuffer; /** < GL_ARB_draw_indirect */
 
    struct gl_buffer_object *CopyReadBuffer; /**< GL_ARB_copy_buffer */
    struct gl_buffer_object *CopyWriteBuffer; /**< GL_ARB_copy_buffer */

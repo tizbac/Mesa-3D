@@ -87,6 +87,10 @@ get_buffer_target(struct gl_context *ctx, GLenum target)
       return &ctx->CopyReadBuffer;
    case GL_COPY_WRITE_BUFFER:
       return &ctx->CopyWriteBuffer;
+   case GL_DRAW_INDIRECT_BUFFER:
+      if (ctx->Extensions.ARB_draw_indirect)
+         return &ctx->DrawIndirectBuffer;
+      break;
    case GL_TRANSFORM_FEEDBACK_BUFFER:
       if (ctx->Extensions.EXT_transform_feedback) {
          return &ctx->TransformFeedback.CurrentBuffer;
@@ -873,6 +877,11 @@ _mesa_DeleteBuffers(GLsizei n, const GLuint *ids)
          }
          if (arrayObj->ElementArrayBufferObj == bufObj) {
             _mesa_BindBuffer( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
+         }
+
+         /* unbind ARB_draw_indirect binding point */
+         if (ctx->DrawIndirectBuffer == bufObj) {
+            _mesa_BindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
          }
 
          /* unbind ARB_copy_buffer binding points */

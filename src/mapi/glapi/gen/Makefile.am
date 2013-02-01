@@ -96,6 +96,7 @@ API_XML = \
 	ARB_depth_clamp.xml \
 	ARB_draw_buffers_blend.xml \
 	ARB_draw_elements_base_vertex.xml \
+	ARB_draw_indirect.xml \
 	ARB_draw_instanced.xml \
 	ARB_ES2_compatibility.xml \
 	ARB_ES3_compatibility.xml \

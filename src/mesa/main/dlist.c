@@ -1356,6 +1356,41 @@ save_DrawElementsInstancedBaseVertexBaseInstance(GLenum mode,
 	       "glDrawElementsInstancedBaseVertexBaseInstance() during display list compile");
 }
 
+static void GLAPIENTRY
+save_DrawArraysIndirect(GLenum mode, const GLvoid *indirect)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   _mesa_error(ctx, GL_INVALID_OPERATION,
+	       "glDrawArraysIndirect() during display list compile");
+}
+
+static void GLAPIENTRY
+save_DrawElementsIndirect(GLenum mode, GLenum type, const GLvoid *indirect)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   _mesa_error(ctx, GL_INVALID_OPERATION,
+	       "glDrawElementsIndirect() during display list compile");
+}
+
+static void GLAPIENTRY
+save_MultiDrawArraysIndirect(GLenum mode, const GLvoid *indirect,
+                             GLsizei primcount, GLsizei stride)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   _mesa_error(ctx, GL_INVALID_OPERATION,
+	       "glMultiDrawArraysIndirect() during display list compile");
+}
+
+static void GLAPIENTRY
+save_MultiDrawElementsIndirect(GLenum mode, GLenum type,
+                               const GLvoid *indirect,
+                               GLsizei primcount, GLsizei stride)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   _mesa_error(ctx, GL_INVALID_OPERATION,
+	       "glMultiDrawElementsIndirect() during display list compile");
+}
+
 static void invalidate_saved_current_state( struct gl_context *ctx )
 {
    GLint i;
@@ -9619,6 +9654,12 @@ _mesa_save_vtxfmt_init(GLvertexformat * vfmt)
    vfmt->DrawArraysInstancedBaseInstance = save_DrawArraysInstancedBaseInstance;
    vfmt->DrawElementsInstancedBaseInstance = save_DrawElementsInstancedBaseInstance;
    vfmt->DrawElementsInstancedBaseVertexBaseInstance = save_DrawElementsInstancedBaseVertexBaseInstance;
+
+   /* GL_ARB_draw_indirect and GL_ARB_multi_draw_indirect */
+   vfmt->DrawArraysIndirect = save_DrawArraysIndirect;
+   vfmt->MultiDrawArraysIndirect = save_MultiDrawArraysIndirect;
+   vfmt->DrawElementsIndirect = save_DrawElementsIndirect;
+   vfmt->MultiDrawElementsIndirect = save_MultiDrawElementsIndirect;
 
    /* The driver is required to implement these as
     * 1) They can probably do a better job.
