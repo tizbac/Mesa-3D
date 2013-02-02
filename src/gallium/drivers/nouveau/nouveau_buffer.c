@@ -175,7 +175,9 @@ nouveau_transfer_write(struct nouveau_context *nv, struct nouveau_transfer *tx,
    if (buf->data)
       memcpy(data, buf->data + base, size);
    else
-      buf->status |= NOUVEAU_BUFFER_STATUS_DIRTY;
+      buf->status |=
+         NOUVEAU_BUFFER_STATUS_GPU_WRITING |
+         NOUVEAU_BUFFER_STATUS_DIRTY;
 
    if (tx->bo)
       nv->copy_data(nv, buf->bo, buf->offset + base, buf->domain,
