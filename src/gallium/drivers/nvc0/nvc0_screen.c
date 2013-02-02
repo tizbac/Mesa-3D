@@ -457,7 +457,8 @@ nvc0_screen_create(struct nouveau_device *dev)
    push->user_priv = screen;
 
    screen->base.vidmem_bindings |= PIPE_BIND_CONSTANT_BUFFER |
-      PIPE_BIND_VERTEX_BUFFER | PIPE_BIND_INDEX_BUFFER;
+      PIPE_BIND_VERTEX_BUFFER | PIPE_BIND_INDEX_BUFFER |
+      PIPE_BIND_COMMAND_BUFFER;
    screen->base.sysmem_bindings |=
       PIPE_BIND_VERTEX_BUFFER | PIPE_BIND_INDEX_BUFFER;
 
