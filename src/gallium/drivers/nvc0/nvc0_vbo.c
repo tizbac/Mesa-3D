@@ -872,6 +872,21 @@ nvc0_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info)
       PUSH_DATA (push, info->start_instance);
    }
 
+   if (info->primitive_restart != nvc0->state.prim_restart) {
+      if (info->primitive_restart) {
+         BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 2);
+         PUSH_DATA (push, 1);
+         PUSH_DATA (push, info->restart_index);
+      } else {
+         IMMED_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 0);
+      }
+      nvc0->state.prim_restart = info->primitive_restart;
+   } else
+   if (info->primitive_restart) {
+      BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_INDEX), 1);
+      PUSH_DATA (push, info->restart_index);
+   }
+
    if (nvc0->base.vbo_dirty) {
       IMMED_NVC0(push, NVC0_3D(VERTEX_ARRAY_FLUSH), 0);
       nvc0->base.vbo_dirty = FALSE;
@@ -880,26 +895,8 @@ nvc0_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info)
    if (info->indexed) {
       boolean shorten = info->max_index <= 65535;
 
-      if (info->primitive_restart != nvc0->state.prim_restart) {
-         if (info->primitive_restart) {
-            BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 2);
-            PUSH_DATA (push, 1);
-            PUSH_DATA (push, info->restart_index);
-
-            if (info->restart_index > 65535)
-               shorten = FALSE;
-         } else {
-            IMMED_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 0);
-         }
-         nvc0->state.prim_restart = info->primitive_restart;
-      } else
-      if (info->primitive_restart) {
-         BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_INDEX), 1);
-         PUSH_DATA (push, info->restart_index);
-
-         if (info->restart_index > 65535)
-            shorten = FALSE;
-      }
+      if (info->primitive_restart && info->restart_index > 65535)
+         shorten = FALSE;
 
       if (unlikely(info->indirect))
          nvc0_draw_indirect(nvc0, info);
