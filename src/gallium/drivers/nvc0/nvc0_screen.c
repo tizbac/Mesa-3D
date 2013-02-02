@@ -346,8 +346,6 @@ nvc0_magic_3d_init(struct nouveau_pushbuf *push, uint16_t obj_class)
    PUSH_DATA (push, (3 << 16) | 3);
    BEGIN_NVC0(push, SUBC_3D(0x1794), 1);
    PUSH_DATA (push, (2 << 16) | 2);
-   BEGIN_NVC0(push, SUBC_3D(0x0de8), 1);
-   PUSH_DATA (push, 1);
 
    BEGIN_NVC0(push, SUBC_3D(0x12ac), 1);
    PUSH_DATA (push, 0);
@@ -579,6 +577,8 @@ nvc0_screen_create(struct nouveau_device *dev)
    PUSH_DATA (push, 1);
    BEGIN_NVC0(push, NVC0_3D(LINE_LAST_PIXEL), 1);
    PUSH_DATA (push, 0);
+   BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_WITH_DRAW_ARRAYS), 1);
+   PUSH_DATA (push, 1);
    BEGIN_NVC0(push, NVC0_3D(BLEND_SEPARATE_ALPHA), 1);
    PUSH_DATA (push, 1);
    BEGIN_NVC0(push, NVC0_3D(BLEND_ENABLE_COMMON), 1);
