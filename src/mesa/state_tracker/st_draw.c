@@ -258,6 +258,10 @@ st_draw_vbo(struct gl_context *ctx,
 
    if (indirect) {
       info.indirect = st_buffer_object(indirect)->buffer;
+
+      /* Primitive restart is not handled by the VBO module in this case. */
+      info.primitive_restart = ctx->Array._PrimitiveRestart;
+      info.restart_index = ctx->Array._RestartIndex;
    }
 
    /* do actual drawing */
