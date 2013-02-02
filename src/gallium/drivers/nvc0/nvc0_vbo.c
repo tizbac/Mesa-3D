@@ -819,6 +819,27 @@ nvc0_draw_indirect(struct nvc0_context *nvc0, const struct pipe_draw_info *info)
                         buf->bo, offset, NVC0_IB_ENTRY_1_NO_PREFETCH | size);
 }
 
+static INLINE void
+nvc0_update_prim_restart(struct nvc0_context *nvc0, boolean en, uint32_t index)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+
+   if (en != nvc0->state.prim_restart) {
+      if (en) {
+         BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 2);
+         PUSH_DATA (push, 1);
+         PUSH_DATA (push, index);
+      } else {
+         IMMED_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 0);
+      }
+      nvc0->state.prim_restart = en;
+   } else
+   if (en) {
+      BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_INDEX), 1);
+      PUSH_DATA (push, index);
+   }
+}
+
 void
 nvc0_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info)
 {
@@ -872,48 +893,32 @@ nvc0_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info)
       PUSH_DATA (push, info->start_instance);
    }
 
-   if (info->primitive_restart != nvc0->state.prim_restart) {
-      if (info->primitive_restart) {
-         BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 2);
-         PUSH_DATA (push, 1);
-         PUSH_DATA (push, info->restart_index);
-      } else {
-         IMMED_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 0);
-      }
-      nvc0->state.prim_restart = info->primitive_restart;
-   } else
-   if (info->primitive_restart) {
-      BEGIN_NVC0(push, NVC0_3D(PRIM_RESTART_INDEX), 1);
-      PUSH_DATA (push, info->restart_index);
-   }
+   nvc0_update_prim_restart(nvc0, info->primitive_restart, info->restart_index);
 
    if (nvc0->base.vbo_dirty) {
       IMMED_NVC0(push, NVC0_3D(VERTEX_ARRAY_FLUSH), 0);
       nvc0->base.vbo_dirty = FALSE;
    }
 
+   if (unlikely(info->indirect)) {
+      nvc0_draw_indirect(nvc0, info);
+   } else
+   if (unlikely(info->count_from_stream_output)) {
+      nvc0_draw_stream_output(nvc0, info);
+   } else
    if (info->indexed) {
       boolean shorten = info->max_index <= 65535;
 
       if (info->primitive_restart && info->restart_index > 65535)
          shorten = FALSE;
 
-      if (unlikely(info->indirect))
-         nvc0_draw_indirect(nvc0, info);
-      else
-         nvc0_draw_elements(nvc0, shorten,
-                            info->mode, info->start, info->count,
-                            info->instance_count, info->index_bias);
-   } else
-   if (unlikely(info->count_from_stream_output)) {
-      nvc0_draw_stream_output(nvc0, info);
+      nvc0_draw_elements(nvc0, shorten,
+                         info->mode, info->start, info->count,
+                         info->instance_count, info->index_bias);
    } else {
-      if (unlikely(info->indirect))
-         nvc0_draw_indirect(nvc0, info);
-      else
-         nvc0_draw_arrays(nvc0,
-                          info->mode, info->start, info->count,
-                          info->instance_count);
+      nvc0_draw_arrays(nvc0,
+                       info->mode, info->start, info->count,
+                       info->instance_count);
    }
    push->kick_notify = nvc0_default_kick_notify;
 
