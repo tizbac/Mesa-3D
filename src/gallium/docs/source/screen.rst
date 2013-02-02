@@ -295,6 +295,8 @@ resources might be created and handled quite differently.
   bound to the graphics pipeline as a shader resource.
 * ``PIPE_BIND_COMPUTE_RESOURCE``: A buffer or texture that can be
   bound to the compute program as a shader resource.
+* ``PIPE_BIND_COMMAND_BUFFER``: A buffer or that may be sourced by the
+  GPU command processor, like with indirect drawing.
 
 .. _pipe_usage:
 
