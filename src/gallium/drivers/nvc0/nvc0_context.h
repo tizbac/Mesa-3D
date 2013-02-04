@@ -132,8 +132,9 @@ struct nvc0_context {
    struct pipe_vertex_buffer vtxbuf[PIPE_MAX_ATTRIBS];
    unsigned num_vtxbufs;
    struct pipe_index_buffer idxbuf;
-   uint32_t constant_vbos;
+   uint32_t vbo_valid; /* bitmask of non-NULL vertex buffers (includes user) */
    uint32_t vbo_user; /* bitmask of vertex buffers pointing to user memory */
+   uint32_t vbo_const; /* bitmask of user vertex buffers with stride 0 */
    uint32_t vb_elt_first; /* from pipe_draw_info, for vertex upload */
    uint32_t vb_elt_limit; /* max - min element (count - 1) */
    uint32_t instance_off; /* current base vertex for instanced arrays */

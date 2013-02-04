@@ -777,40 +777,98 @@ nvc0_set_viewport_state(struct pipe_context *pipe,
     nvc0->dirty |= NVC0_NEW_VIEWPORT;
 }
 
+/* Partial updates is nice, but we still can't rely on this being
+ * called for actual changes only.
+ * Also, we don't want to set NEW_ARRAYS when we're just notified
+ * about updates of static attributes (user buffers with stride 0).
+ */
 static void
 nvc0_set_vertex_buffers(struct pipe_context *pipe,
                         unsigned start_slot, unsigned count,
                         const struct pipe_vertex_buffer *vb)
 {
-    struct nvc0_context *nvc0 = nvc0_context(pipe);
-    unsigned i;
+   struct nvc0_context *nvc0 = nvc0_context(pipe);
+   unsigned i, b;
+   unsigned limit_slot = start_slot + count;
+   uint32_t mask;
+   uint32_t vbo_bufs = 0;
+   uint32_t vbo_valid = nvc0->vbo_valid;
+   uint32_t vbo_user = nvc0->vbo_user;
+   uint32_t vbo_const = nvc0->vbo_const;
 
-    util_set_vertex_buffers_count(nvc0->vtxbuf, &nvc0->num_vtxbufs, vb,
-                                  start_slot, count);
+   if (unlikely(!count))
+      return;
+   mask = (0xffffffff >> (32 - count)) << start_slot;
 
-    if (!vb) {
-       nvc0->vbo_user &= ~(((1ull << count) - 1) << start_slot);
-       nvc0->constant_vbos &= ~(((1ull << count) - 1) << start_slot);
-       return;
-    }
+   if (unlikely(!vb)) {
+      if (unlikely(!(nvc0->vbo_valid & mask)))
+         return;
+      if (mask & (nvc0->vbo_valid & ~nvc0->vbo_user)) {
+         for (b = start_slot; b < limit_slot; ++b)
+            pipe_resource_reference(&nvc0->vtxbuf[b].buffer, NULL);
+      }
+      if (nvc0->vbo_valid & ~nvc0->vbo_user)
+         nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_VTX);
 
-    for (i = 0; i < count; ++i) {
-       unsigned dst_index = start_slot + i;
+      nvc0->vbo_valid &= ~mask;
+      nvc0->vbo_user &= ~mask;
+      nvc0->vbo_const &= ~mask;
 
-       if (vb[i].user_buffer) {
-          nvc0->vbo_user |= 1 << dst_index;
-          if (!vb[i].stride)
-             nvc0->constant_vbos |= 1 << dst_index;
-          else
-             nvc0->constant_vbos &= ~(1 << dst_index);
-       } else {
-          nvc0->vbo_user &= ~(1 << dst_index);
-          nvc0->constant_vbos &= ~(1 << dst_index);
-       }
-    }
+      nvc0->num_vtxbufs =
+         nvc0->vbo_valid ? (util_logbase2(nvc0->vbo_valid) + 1) : 0;
 
-    nvc0->dirty |= NVC0_NEW_ARRAYS;
-    nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_VTX);
+      nvc0->dirty |= NVC0_NEW_ARRAYS;
+      return;
+   }
+
+   for (i = 0; i < count; ++i) {
+      b = start_slot + i;
+
+      if (vb[i].buffer) {
+         vbo_bufs |= 1 << b;
+         if (nvc0->vtxbuf[b].buffer != vb[i].buffer ||
+             nvc0->vtxbuf[b].buffer_offset != vb[i].buffer_offset ||
+             nvc0->vtxbuf[b].stride != vb[i].stride) {
+            pipe_resource_reference(&nvc0->vtxbuf[b].buffer, vb[i].buffer);
+            nvc0->vtxbuf[b].buffer_offset = vb[i].buffer_offset;
+            nvc0->vtxbuf[b].stride = vb[i].stride;
+            nvc0->dirty |= NVC0_NEW_ARRAYS;
+         }
+      } else
+      if (vb[i].user_buffer) {
+         nvc0->vtxbuf[b].user_buffer = vb[i].user_buffer;
+         if (nvc0->vtxbuf[b].stride != vb[i].stride)
+            nvc0->dirty |= NVC0_NEW_ARRAYS;
+         nvc0->vtxbuf[b].stride = vb[i].stride;
+         vbo_user |= 1 << b;
+         vbo_const = vb[i].stride ?
+            (vbo_const & ~(1 << b)) : (vbo_const | (1 << b));
+         pipe_resource_reference(&nvc0->vtxbuf[b].buffer, NULL);
+      } else {
+         vbo_valid &= ~(1 << b);
+         vbo_user &= ~(1 << b);
+         pipe_resource_reference(&nvc0->vtxbuf[b].buffer, NULL);
+      }
+   }
+   vbo_valid |= vbo_bufs | vbo_user;
+   vbo_user &= ~vbo_bufs;
+   vbo_const &= vbo_user;
+
+   if (nvc0->vbo_valid != vbo_valid) {
+      nvc0->vbo_valid = vbo_valid;
+      nvc0->num_vtxbufs =
+         nvc0->vbo_valid ? (util_logbase2(nvc0->vbo_valid) + 1) : 0;
+      nvc0->dirty |= NVC0_NEW_ARRAYS;
+   } else
+   if (nvc0->vbo_user != vbo_user ||
+       nvc0->vbo_const != vbo_const) {
+      nvc0->dirty |= NVC0_NEW_ARRAYS;
+   }
+   nvc0->vbo_user = vbo_user;
+   nvc0->vbo_const = vbo_const;
+
+   if (nvc0->dirty & NVC0_NEW_ARRAYS)
+      nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_VTX);
 }
 
 static void
@@ -819,22 +877,28 @@ nvc0_set_index_buffer(struct pipe_context *pipe,
 {
     struct nvc0_context *nvc0 = nvc0_context(pipe);
 
-    if (nvc0->idxbuf.buffer)
-       nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_IDX);
-
     if (ib) {
-       pipe_resource_reference(&nvc0->idxbuf.buffer, ib->buffer);
-       nvc0->idxbuf.index_size = ib->index_size;
        if (ib->buffer) {
+          if (nvc0->idxbuf.buffer == ib->buffer &&
+              nvc0->idxbuf.index_size == ib->index_size &&
+              nvc0->idxbuf.offset == ib->offset)
+             return;
           nvc0->idxbuf.offset = ib->offset;
           nvc0->dirty |= NVC0_NEW_IDXBUF;
        } else {
           nvc0->idxbuf.user_buffer = ib->user_buffer;
           nvc0->dirty &= ~NVC0_NEW_IDXBUF;
        }
+       nvc0->idxbuf.index_size = ib->index_size;
+       if (nvc0->idxbuf.buffer)
+          nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_IDX);
+       pipe_resource_reference(&nvc0->idxbuf.buffer, ib->buffer);
     } else {
+       if (nvc0->idxbuf.buffer) {
+          nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_IDX);
+          pipe_resource_reference(&nvc0->idxbuf.buffer, NULL);
+       }
        nvc0->dirty &= ~NVC0_NEW_IDXBUF;
-       pipe_resource_reference(&nvc0->idxbuf.buffer, NULL);
     }
 }
 

@@ -269,7 +269,7 @@ static void
 nvc0_update_user_vbufs_shared(struct nvc0_context *nvc0)
 {
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
-   uint32_t mask = nvc0->vbo_user & ~nvc0->constant_vbos;
+   uint32_t mask = nvc0->vbo_user & ~nvc0->vbo_const;
 
    PUSH_SPACE(push, nvc0->num_vtxbufs * 8);
    while (mask) {
@@ -424,7 +424,7 @@ nvc0_vertex_arrays_validate(struct nvc0_context *nvc0)
    } else {
       vbo_mode = (nvc0->vbo_user && nvc0->vbo_push_hint) ? 1 : 0;
    }
-   const_vbos = vbo_mode ? 0 : nvc0->constant_vbos;
+   const_vbos = vbo_mode ? 0 : nvc0->vbo_const;
 
    update_vertex = (nvc0->dirty & NVC0_NEW_VERTEX) ||
       (const_vbos != nvc0->state.constant_vbos) ||
