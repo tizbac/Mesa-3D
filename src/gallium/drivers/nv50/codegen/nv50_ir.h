@@ -66,7 +66,7 @@ enum operation
    OP_SHR,
    OP_MAX,
    OP_MIN,
-   OP_SAT,  // CLAMP(f32, 0.0, 1.0)
+   OP_SAT, // CLAMP(f32, 0.0, 1.0)
    OP_CEIL,
    OP_FLOOR,
    OP_TRUNC,
@@ -117,21 +117,28 @@ enum operation
    OP_TXQ, // texture size query
    OP_TXD, // texture derivatives
    OP_TXG, // texture gather
-   OP_TEXCSAA,
-   OP_SULD, // surface load
-   OP_SUST, // surface store
+   OP_TEXCSAA, // texture op for coverage sampling
+   OP_TEXPREP, // turn cube map array into 2d array coordinates
+   OP_SULDB, // surface load (raw)
+   OP_SULDP, // surface load (formatted)
+   OP_SUSTB, // surface store (raw)
+   OP_SUSTP, // surface store (formatted)
+   OP_SULEA,   // surface load effective address
+   OP_SUBFM,   // surface bitfield manipulation
+   OP_SUCLAMP, // clamp surface coordinates
+   OP_SUEAU,   // surface effective address
+   OP_MADSP,   // special integer multiply-add
+   OP_TEXBAR, // texture dependency barrier
    OP_DFDX,
    OP_DFDY,
    OP_RDSV, // read system value
    OP_WRSV, // write system value
-   OP_TEXPREP, // turn cube map array into 2d array coordinates, TODO: move
    OP_QUADOP,
    OP_QUADON,
    OP_QUADPOP,
    OP_POPCNT, // bitcount(src0 & src1)
    OP_INSBF,  // insert first src1[8:15] bits of src0 into src2 at src1[0:7]
    OP_EXTBF,
-   OP_TEXBAR,
    OP_LAST
 };
 
