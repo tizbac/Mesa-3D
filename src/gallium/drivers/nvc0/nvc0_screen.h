@@ -17,6 +17,9 @@
 /* doesn't count reserved slots (for auxiliary constants, immediates, etc.) */
 #define NVC0_MAX_PIPE_CONSTBUFS 14
 
+#define NVC0_MAX_SURFACES       16
+#define NVC0_MAX_GLOBAL_BUFFERS 16
+
 struct nvc0_context;
 
 struct nvc0_blitter;
@@ -63,7 +66,7 @@ struct nvc0_screen {
    struct nouveau_object *eng3d; /* sqrt(1/2)|kepler> + sqrt(1/2)|fermi> */
    struct nouveau_object *eng2d;
    struct nouveau_object *m2mf;
-   struct nouveau_object *dijkstra;
+   struct nouveau_object *compute;
 };
 
 static INLINE struct nvc0_screen *
@@ -79,6 +82,8 @@ void nvc0_screen_make_buffers_resident(struct nvc0_screen *);
 
 int nvc0_screen_tic_alloc(struct nvc0_screen *, void *);
 int nvc0_screen_tsc_alloc(struct nvc0_screen *, void *);
+
+int nve4_screen_compute_setup(struct nvc0_screen *, struct nouveau_pushbuf *);
 
 static INLINE void
 nvc0_resource_fence(struct nv04_resource *res, uint32_t flags)

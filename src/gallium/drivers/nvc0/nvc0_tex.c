@@ -413,7 +413,7 @@ nvc0_validate_tsc(struct nvc0_context *nvc0, int s)
    return need_flush;
 }
 
-static boolean
+boolean
 nve4_validate_tsc(struct nvc0_context *nvc0, int s)
 {
    struct nouveau_bo *txc = nvc0->screen->txc;

@@ -56,6 +56,12 @@
 #define NVC0_NEW_TFB_TARGETS  (1 << 21)
 #define NVC0_NEW_IDXBUF       (1 << 22)
 
+#define NVC0_NEW_CP_PROGRAM   (1 << 0)
+#define NVC0_NEW_CP_SURFACES  (1 << 1)
+#define NVC0_NEW_CP_TEXTURES  (1 << 2)
+#define NVC0_NEW_CP_SAMPLERS  (1 << 3)
+#define NVC0_NEW_CP_CONSTBUF  (1 << 4)
+
 #define NVC0_BIND_FB            0
 #define NVC0_BIND_VTX           1
 #define NVC0_BIND_VTX_TMP       2
@@ -66,6 +72,13 @@
 #define NVC0_BIND_SCREEN      245
 #define NVC0_BIND_TLS         246
 #define NVC0_BIND_COUNT       247
+
+#define NVC0_BIND_CP_CB(i)     (  0 + (i))
+#define NVC0_BIND_CP_TEX(i)    ( 16 + (i))
+#define NVC0_BIND_CP_SFC(i)    ( 32 + (i))
+#define NVC0_BIND_CP_GLOBAL(i) ( 48 + (i))
+#define NVC0_BIND_CP_SCREEN      64
+#define NVC0_BIND_CP_COUNT       65
 
 #define NVC0_BIND_2D            0
 #define NVC0_BIND_M2MF          0
@@ -81,6 +94,7 @@ struct nvc0_context {
 
    struct nouveau_bufctx *bufctx_3d;
    struct nouveau_bufctx *bufctx;
+   struct nouveau_bufctx *bufctx_cp;
 
    struct nvc0_screen *screen;
 
@@ -90,6 +104,7 @@ struct nvc0_context {
                           uint32_t nblocksx, uint32_t nblocksy);
 
    uint32_t dirty;
+   uint32_t dirty_cp; /* dirty flags for compute state */
 
    struct {
       boolean flushed;
@@ -105,8 +120,8 @@ struct nvc0_context {
       uint8_t vbo_mode; /* 0 = normal, 1 = translate, 3 = translate, forced */
       uint8_t num_vtxbufs;
       uint8_t num_vtxelts;
-      uint8_t num_textures[5];
-      uint8_t num_samplers[5];
+      uint8_t num_textures[6];
+      uint8_t num_samplers[6];
       uint8_t tls_required; /* bitmask of shader types using l[] */
       uint8_t c14_bound; /* whether immediate array constbuf is bound */
       uint8_t clip_enable;
@@ -125,9 +140,10 @@ struct nvc0_context {
    struct nvc0_program *tevlprog;
    struct nvc0_program *gmtyprog;
    struct nvc0_program *fragprog;
+   struct nvc0_program *compprog;
 
-   struct nvc0_constbuf constbuf[5][NVC0_MAX_PIPE_CONSTBUFS];
-   uint16_t constbuf_dirty[5];
+   struct nvc0_constbuf constbuf[6][NVC0_MAX_PIPE_CONSTBUFS];
+   uint16_t constbuf_dirty[6];
 
    struct pipe_vertex_buffer vtxbuf[PIPE_MAX_ATTRIBS];
    unsigned num_vtxbufs;
@@ -139,14 +155,14 @@ struct nvc0_context {
    uint32_t instance_off; /* current base vertex for instanced arrays */
    uint32_t instance_max; /* last instance for current draw call */
 
-   struct pipe_sampler_view *textures[5][PIPE_MAX_SAMPLERS];
-   unsigned num_textures[5];
-   uint32_t textures_dirty[5];
-   struct nv50_tsc_entry *samplers[5][PIPE_MAX_SAMPLERS];
-   unsigned num_samplers[5];
-   uint16_t samplers_dirty[5];
+   struct pipe_sampler_view *textures[6][PIPE_MAX_SAMPLERS];
+   unsigned num_textures[6];
+   uint32_t textures_dirty[6];
+   struct nv50_tsc_entry *samplers[6][PIPE_MAX_SAMPLERS];
+   unsigned num_samplers[6];
+   uint16_t samplers_dirty[6];
 
-   uint32_t tex_handles[5][PIPE_MAX_SAMPLERS]; /* for nve4 */
+   uint32_t tex_handles[6][PIPE_MAX_SAMPLERS]; /* for nve4 */
 
    struct pipe_framebuffer_state framebuffer;
    struct pipe_blend_color blend_colour;
@@ -168,6 +184,9 @@ struct nvc0_context {
    uint cond_mode;
 
    struct nvc0_blitctx *blit;
+
+   struct pipe_surface *surfaces[NVC0_MAX_SURFACES];
+   struct pipe_resource *globals[NVC0_MAX_GLOBAL_BUFFERS];
 
 #ifdef NVC0_WITH_DRAW_MODULE
    struct draw_context *draw;
@@ -246,6 +265,7 @@ extern void nvc0_clear(struct pipe_context *, unsigned buffers,
 extern void nvc0_init_surface_functions(struct nvc0_context *);
 
 /* nvc0_tex.c */
+boolean nve4_validate_tsc(struct nvc0_context *nvc0, int s);
 void nvc0_validate_textures(struct nvc0_context *);
 void nvc0_validate_samplers(struct nvc0_context *);
 void nve4_set_tex_handles(struct nvc0_context *);
@@ -314,5 +334,9 @@ nvc0_screen_get_video_param(struct pipe_screen *pscreen,
 
 /* nvc0_push.c */
 void nvc0_push_vbo(struct nvc0_context *, const struct pipe_draw_info *);
+
+/* nve4_compute.c */
+void nve4_launch_grid(struct pipe_context *,
+                      const uint *, const uint *, uint32_t *, const void *);
 
 #endif

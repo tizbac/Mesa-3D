@@ -63,6 +63,7 @@ nvc0_context_unreference_resources(struct nvc0_context *nvc0)
 
    nouveau_bufctx_del(&nvc0->bufctx_3d);
    nouveau_bufctx_del(&nvc0->bufctx);
+   nouveau_bufctx_del(&nvc0->bufctx_cp);
 
    util_unreference_framebuffer_state(&nvc0->framebuffer);
 
@@ -97,6 +98,9 @@ nvc0_destroy(struct pipe_context *pipe)
    nouveau_pushbuf_kick(nvc0->base.pushbuf, nvc0->base.pushbuf->channel);
 
    nvc0_context_unreference_resources(nvc0);
+
+   pipe->launch_grid = (nvc0->screen->base.device->chipset >= 0xe0) ?
+      nve4_launch_grid : NULL;
 
 #ifdef NVC0_WITH_DRAW_MODULE
    draw_destroy(nvc0->draw);
@@ -208,6 +212,8 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    int ret;
    uint32_t flags;
 
+   debug_printf("sizeof(nvc0_context) = %u\n", sizeof(nvc0_context));
+
    nvc0 = CALLOC_STRUCT(nvc0_context);
    if (!nvc0)
       return NULL;
@@ -222,7 +228,10 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    ret = nouveau_bufctx_new(screen->base.client, NVC0_BIND_COUNT,
                             &nvc0->bufctx_3d);
    if (!ret)
-      nouveau_bufctx_new(screen->base.client, 2, &nvc0->bufctx);
+      ret = nouveau_bufctx_new(screen->base.client, 2, &nvc0->bufctx);
+   if (!ret)
+      ret = nouveau_bufctx_new(screen->base.client, NVC0_BIND_CP_COUNT,
+                               &nvc0->bufctx_cp);
    if (ret)
       goto out_err;
 
@@ -276,9 +285,15 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->txc);
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->poly_cache);
 
+   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->text);
+   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->txc);
+   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags | NOUVEAU_BO_WR, screen->tls);
+
    flags = NOUVEAU_BO_GART | NOUVEAU_BO_WR;
 
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->fence.bo);
+   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->fence.bo);
+
    BCTX_REFN_bo(nvc0->bufctx, FENCE, flags, screen->fence.bo);
 
    nvc0->base.scratch.bo_size = 2 << 20;

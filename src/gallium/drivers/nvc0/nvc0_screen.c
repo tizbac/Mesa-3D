@@ -93,7 +93,7 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_TEXTURE_CUBE_LEVELS:
       return 15;
    case PIPE_CAP_MAX_TEXTURE_3D_LEVELS:
-      return 12;
+      return (class_3d >= NVE4_3D_CLASS) ? 13 : 12;
    case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
       return 2048;
    case PIPE_CAP_MIN_TEXEL_OFFSET:
@@ -176,6 +176,8 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_VERTEX_ELEMENT_SRC_OFFSET_4BYTE_ALIGNED_ONLY:
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
       return 0;
+   case PIPE_CAP_COMPUTE:
+      return (class_3d >= NVE4_3D_CLASS) ? 1 : 0;
    default:
       NOUVEAU_ERR("unknown PIPE_CAP %d\n", param);
       return 0;
@@ -186,6 +188,8 @@ static int
 nvc0_screen_get_shader_param(struct pipe_screen *pscreen, unsigned shader,
                              enum pipe_shader_cap param)
 {
+   const uint16_t class_3d = nouveau_screen(pscreen)->class_3d;
+
    switch (shader) {
    case PIPE_SHADER_VERTEX:
       /*
@@ -194,12 +198,15 @@ nvc0_screen_get_shader_param(struct pipe_screen *pscreen, unsigned shader,
       */
    case PIPE_SHADER_GEOMETRY:
    case PIPE_SHADER_FRAGMENT:
+   case PIPE_SHADER_COMPUTE:
       break;
    default:
       return 0;
    }
    
    switch (param) {
+   case PIPE_SHADER_CAP_PREFERRED_IR:
+      return PIPE_SHADER_IR_TGSI;
    case PIPE_SHADER_CAP_MAX_INSTRUCTIONS:
    case PIPE_SHADER_CAP_MAX_ALU_INSTRUCTIONS:
    case PIPE_SHADER_CAP_MAX_TEX_INSTRUCTIONS:
@@ -267,6 +274,47 @@ nvc0_screen_get_paramf(struct pipe_screen *pscreen, enum pipe_capf param)
    default:
       NOUVEAU_ERR("unknown PIPE_CAP %d\n", param);
       return 0.0f;
+   }
+}
+
+static int
+nvc0_screen_get_compute_param(struct pipe_screen *pscreen,
+                              enum pipe_compute_cap param, void *data)
+{
+   uint64_t *data64 = (uint64_t *)data;
+   const uint16_t obj_class = nvc0_screen(pscreen)->compute->oclass;
+
+   switch (param) {
+   case PIPE_COMPUTE_CAP_GRID_DIMENSION:
+      data64[0] = 3;
+      return 8;
+   case PIPE_COMPUTE_CAP_MAX_GRID_SIZE:
+      data64[0] = (1 << ((obj_class >= NVE4_COMPUTE_CLASS) ? 31 : 16)) - 1;
+      data64[1] = 65535;
+      data64[2] = 65535;
+      return 24;
+   case PIPE_COMPUTE_CAP_MAX_BLOCK_SIZE:
+      data64[0] = 1024;
+      data64[1] = 1024;
+      data64[2] = 64;
+      return 24;
+   case PIPE_COMPUTE_CAP_MAX_THREADS_PER_BLOCK:
+      data64[0] = 1024;
+      return 8;
+   case PIPE_COMPUTE_CAP_MAX_GLOBAL_SIZE: /* g[] */
+      data64[0] = (uint64_t)1 << 40;
+      return 8;
+   case PIPE_COMPUTE_CAP_MAX_LOCAL_SIZE: /* s[] */
+      data64[0] = 48 << 10;
+      return 8;
+   case PIPE_COMPUTE_CAP_MAX_PRIVATE_SIZE: /* l[] */
+      data64[0] = 512 << 10;
+      return 8;
+   case PIPE_COMPUTE_CAP_MAX_INPUT_SIZE: /* c[], arbitrary limit */
+      data64[0] = 4096;
+      return 8;
+   default:
+      return 0;
    }
 }
 
@@ -410,6 +458,22 @@ nvc0_screen_fence_update(struct pipe_screen *pscreen)
 {
    struct nvc0_screen *screen = nvc0_screen(pscreen);
    return screen->fence.map[0];
+}
+
+static int
+nvc0_screen_init_compute(struct nvc0_screen *screen)
+{
+   screen->base.base.get_compute_param = nvc0_screen_get_compute_param;
+
+   switch (screen->base.device->chipset & 0xf0) {
+   case 0xc0:
+   case 0xd0:
+      return 0;
+   case 0xe0:
+      return nve4_screen_compute_setup(screen, screen->base.pushbuf);
+   default:
+      return -1;
+   }
 }
 
 #define FAIL_SCREEN_INIT(str, err)                    \
@@ -775,6 +839,8 @@ nvc0_screen_create(struct nouveau_device *dev)
 
    IMMED_NVC0(push, NVC0_3D(EDGEFLAG), 1);
 
+   nvc0_screen_init_compute(screen);
+
    PUSH_KICK (push);
 
    screen->tic.entries = CALLOC(4096, sizeof(void *));
@@ -785,6 +851,9 @@ nvc0_screen_create(struct nouveau_device *dev)
    screen->mm_VRAM_fe0 = nouveau_mm_create(dev, NOUVEAU_BO_VRAM, &mm_config);
 
    if (!nvc0_blitter_create(screen))
+      goto fail;
+
+   if (nvc0_screen_init_compute(screen))
       goto fail;
 
    nouveau_fence_new(&screen->base, &screen->base.fence.current, FALSE);
