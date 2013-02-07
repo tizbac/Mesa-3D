@@ -161,6 +161,10 @@ struct nv50_ir_prog_info
          boolean separateFragData;
          boolean usesDiscard;
       } fp;
+      struct {
+         uint32_t inputOffset; /* base address for user args */
+         uint32_t sharedOffset; /* reserved space in s[] */
+      } cp;
    } prop;
 
    struct {
