@@ -564,7 +564,7 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset)
 
    info->io.genUserClip = prog->vp.num_ucps;
    info->io.ucpBase = 256;
-   info->io.ucpBinding = 15;
+   info->io.ucpCBSlot = 15;
 
    info->assignSlots = nvc0_program_assign_varying_slots;
 

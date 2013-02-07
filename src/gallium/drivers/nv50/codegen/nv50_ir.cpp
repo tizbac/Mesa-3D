@@ -1119,6 +1119,7 @@ nv50_ir_generate_code(struct nv50_ir_prog_info *info)
    nv50_ir::Program *prog = new nv50_ir::Program(type, targ);
    if (!prog)
       return -1;
+   prog->driverData = info;
    prog->dbgFlags = info->dbgFlags;
    prog->optLevel = info->optLevel;
 

@@ -1877,7 +1877,7 @@ Converter::handleSTORE()
    int c;
    std::vector<Value *> off, src, def;
 
-   getResourceCoords(off, r, 1);
+   getResourceCoords(off, r, 0);
    src = off;
    const int s = off.size();
 
@@ -2489,7 +2489,7 @@ Converter::handleUserClipPlanes()
 
    for (c = 0; c < 4; ++c) {
       for (i = 0; i < info->io.genUserClip; ++i) {
-         Symbol *sym = mkSymbol(FILE_MEMORY_CONST, info->io.ucpBinding,
+         Symbol *sym = mkSymbol(FILE_MEMORY_CONST, info->io.ucpCBSlot,
                                 TYPE_F32, info->io.ucpBase + i * 16 + c * 4);
          Value *ucp = mkLoadv(TYPE_F32, sym, NULL);
          if (c == 0)

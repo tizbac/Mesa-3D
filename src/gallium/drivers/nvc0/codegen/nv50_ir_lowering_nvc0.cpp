@@ -158,6 +158,7 @@ private:
 
 private:
    LValue *rZero;
+   LValue *carry;
    const bool needTexBar;
 };
 
@@ -468,7 +469,11 @@ NVC0LegalizePostRA::visit(Function *fn)
       insertTextureBarriers(fn);
 
    rZero = new_LValue(fn, FILE_GPR);
+   carry = new_LValue(fn, FILE_FLAGS);
+
    rZero->reg.data.id = prog->getTarget()->getFileSize(FILE_GPR);
+   carry->reg.data.id = 0;
+
    return true;
 }
 
@@ -495,6 +500,45 @@ NVC0LegalizePostRA::split64BitOp(Instruction *i)
       i->dType = i->sType = TYPE_U32;
 
       i->bb->insertAfter(i, cloneForward(func, i));
+   } else
+   if (i->dType == TYPE_U64) {
+      if (i->op != OP_ADD)
+         return;
+      i->setType(TYPE_U32);
+      i->setDef(0, cloneShallow(func, i->getDef(0)));
+      i->getDef(0)->reg.size = 4;
+      Instruction *lo = i;
+      Instruction *hi = cloneForward(func, i);
+      lo->bb->insertAfter(lo, hi);
+      hi->getDef(0)->reg.data.id++;
+      for (int s = 0; s < 2; ++s) {
+         if (lo->getSrc(s)->reg.size < 8) {
+            hi->setSrc(s, r63);
+            continue;
+         } else {
+            if (lo->getSrc(s)->refCount() > 1)
+               lo->setSrc(s, cloneShallow(func, lo->getSrc(s)));
+            lo->getSrc(s)->reg.size /= 2;
+            hi->setSrc(s, cloneShallow(func, lo->getSrc(s)));
+         }
+         switch (hi->src(s).getFile()) {
+         case FILE_IMMEDIATE:
+            hi->getSrc(s)->reg.data.u64 >>= 32;
+            break;
+         case FILE_MEMORY_CONST:
+            INFO("split: const %p size %u\n", hi->getSrc(s), hi->getSrc(s)->reg.size);
+            hi->getSrc(s)->reg.data.offset += 4;
+            break;
+         case FILE_GPR:
+            hi->getSrc(s)->reg.data.id++;
+            break;
+         default:
+            assert(0);
+            break;
+         }
+      }
+      lo->setDef(1, carry);
+      hi->setFlagsSrc(hi->srcCount(), carry);
    }
 }
 
@@ -598,6 +642,8 @@ private:
    bool handleTXD(TexInstruction *);
    bool handleTXQ(TexInstruction *);
    bool handleManualTXD(TexInstruction *);
+   bool handleSULD(TexInstruction *);
+   bool handleSUST(TexInstruction *);
 
    void checkPredicate(Instruction *);
 
@@ -649,6 +695,8 @@ NVC0LoweringPass::handleTEX(TexInstruction *i)
       if (i->tex.r == i->tex.s) {
          i->tex.r += 8; // NOTE: offset should probably be a driver option
          i->tex.s  = 0; // only a single cX[] value possible here
+         if (prog->getType() == Program::TYPE_COMPUTE)
+            i->tex.r += (0x1000 / 4);
       } else {
          // TODO: extract handles and use register to select TIC/TSC entries
       }
@@ -833,6 +881,132 @@ bool
 NVC0LoweringPass::handleTXQ(TexInstruction *txq)
 {
    // TODO: indirect resource/sampler index
+   return true;
+}
+
+#if 0
+
+inline Value *
+NVC0LoweringPass::loadConst32(Value *ptr, uint32_t off)
+{
+   int b = driver->ucpSlot;
+   return mkLoadv(TYPE_U32, mkSymbol(FILE_MEMORY_CONST, b, TYPE_U32, off), ptr);
+}
+
+// nve4 surface descriptor:
+// [0x00]: base address >> 8
+// [0x04]: image info (format)
+// [0x08]: width info
+// [0x0c]: pitch
+// [0x10]: height info
+// [0x14]: 3D
+// [0x18]: depth info
+// [0x1c]: 3D
+void
+NVC0LoweringPass::handleSULDSTnve4(TexInstruction *su)
+{
+   Value *coord[3];
+   Value *size[3];
+   Value *ptr = NULL;
+   uint8_t mode;
+
+   switch (su->tex.target) {
+   case TEX_TARGET_1D:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_2D:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_3D:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_CUBE:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_1D_ARRAY:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_2D_ARRAY:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_CUBE_ARRAY:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_RECT:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   case TEX_TARGET_BUFFER:
+      mode = NV50_IR_SUBOP_SUCLAMP();
+      break;
+   default:
+      assert(0);
+      return;
+   }
+
+   for (c = 0; c < dim; ++c)
+      size[c] = loadConst32(ptr, 0x1100 + (u * 0x20) + (0x8 + c * 8));
+   for (c = 0; c < dim; ++c) {
+      coord[c] = getSSA();
+      bld.mkOp2(OP_SUCLAMP, coord[c], su->getSrc(c), size[c]);
+   }
+   bld.mkOp3(OP_MADSP, TYPE_U32);
+   bld.mkOp3(OP_SUBFM, );
+   bld.mkOp3(OP_MADSP, TYPE_U32);
+   bld.mkOp3(OP_SUEAU, );
+   bld.mkLoad(imageinfo);
+
+   if (su->op == OP_SULDP) {
+      su->op = OP_SULDB;
+      Symbol *mem = mkSymbol(FILE_MEMORY_CONST, 15, TYPE_U32, tabAddr);
+      mkOp2(OP_AND, info, bld.loadImm(NULL, 0x1f));
+      mkOp2(OP_SHL, ptr, ptr, 2);
+      FlowInstruction *call = mkFlow(OP_CALL, mem, CC_ALWAYS, NULL);
+      for (c = 0; c < 4; ++c)
+         call->setSrc(c, mkMovToReg(c, su->getDef(c))->getDef(0));
+      for (c = 0; c < 4; ++c)
+         bld.mkMov(su->getDef(c), call->getDef(c));
+      call->setIndirect(0, ptr);
+   }
+}
+#endif
+
+bool
+NVC0LoweringPass::handleSULD(TexInstruction *i)
+{
+   if (i->op == OP_SULDB && i->tex.target == TEX_TARGET_BUFFER) {
+      // raw, writable buffer load -> use g[]
+      const DataType ldTy = i->dType;
+      LValue *reg = bld.getScratch(8, FILE_GPR);
+      Symbol *mem = bld.mkSymbol(FILE_MEMORY_GLOBAL, 0, ldTy, 0);
+      Symbol *sym = bld.mkSymbol(FILE_MEMORY_CONST, 0, TYPE_U64, 0x1108 + i->tex.r * 32);
+      INFO("suld: sym = %p, size = %u\n", sym, sym->reg.size);
+      bld.mkLoad(TYPE_U64, reg, sym, NULL);
+      bld.mkOp2(OP_ADD, TYPE_U64, reg, reg, i->getSrc(0));
+      Instruction *ld = bld.mkLoad(ldTy, i->getDef(0), mem, reg);
+      for (int d = 1; i->defExists(d) && i->def(d).getFile() == FILE_GPR; ++d)
+         ld->setDef(d, i->getDef(d));
+      bld.getBB()->remove(i);
+   }
+   return true;
+}
+
+bool
+NVC0LoweringPass::handleSUST(TexInstruction *i)
+{
+   if (i->op == OP_SUSTB && i->tex.target == TEX_TARGET_BUFFER) {
+      // raw, writable buffer store -> use g[]
+      const DataType stTy = i->dType;
+      LValue *reg = bld.getScratch(8, FILE_GPR);
+      Symbol *mem = bld.mkSymbol(FILE_MEMORY_GLOBAL, 0, stTy, 0);
+      Symbol *sym = bld.mkSymbol(FILE_MEMORY_CONST, 0, TYPE_U64, 0x1108 + i->tex.r * 32);
+      INFO("sust: sym = %p, size = %u\n", sym, sym->reg.size);
+      bld.mkLoad(TYPE_U64, reg, sym, NULL);
+      bld.mkOp2(OP_ADD, TYPE_U64, reg, reg, i->getSrc(0));
+      Instruction *st = bld.mkStore(OP_STORE, stTy, mem, reg, i->getSrc(1));
+      for (int s = 2; i->defExists(s) && i->def(s).getFile() == FILE_GPR; ++s)
+         st->setSrc(s, i->getSrc(s));
+      bld.getBB()->remove(i);
+   }
    return true;
 }
 
@@ -1093,6 +1267,14 @@ NVC0LoweringPass::visit(Instruction *i)
          i->op = OP_VFETCH;
          assert(prog->getType() != Program::TYPE_FRAGMENT);
       }
+      break;
+   case OP_SULDB:
+   case OP_SULDP:
+      handleSULD(i->asTex());
+      break;
+   case OP_SUSTB:
+   case OP_SUSTP:
+      handleSUST(i->asTex());
       break;
    default:
       break;
