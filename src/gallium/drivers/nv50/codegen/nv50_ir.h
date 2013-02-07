@@ -153,6 +153,11 @@ enum operation
 #define NV50_IR_SUBOP_EMU_PRERET   1
 #define NV50_IR_SUBOP_TEXBAR(n)    n
 #define NV50_IR_SUBOP_MOV_FINAL    1
+#define NV50_IR_SUBOP_SUBFM_3D     1
+#define NV50_IR_SUBOP_SUCLAMP_2D   0x10
+#define NV50_IR_SUBOP_SUCLAMP_SD(r, d) (( 0 + (r)) | ((d == 2) ? 0x10 : 0))
+#define NV50_IR_SUBOP_SUCLAMP_PL(r, d) (( 5 + (r)) | ((d == 2) ? 0x10 : 0))
+#define NV50_IR_SUBOP_SUCLAMP_BL(r, d) ((10 + (r)) | ((d == 2) ? 0x10 : 0))
 
 enum DataType
 {
