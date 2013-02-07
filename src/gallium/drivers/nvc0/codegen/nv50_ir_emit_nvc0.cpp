@@ -115,6 +115,8 @@ private:
 
    void emitFlow(const Instruction *);
 
+   void emitSUCalc(Instruction *);
+
    inline void defId(const ValueDef&, const int pos);
    inline void srcId(const ValueRef&, const int pos);
    inline void srcId(const ValueRef *, const int pos);
@@ -1390,6 +1392,14 @@ CodeEmitterNVC0::emitCachingMode(CacheMode c)
    code[0] |= val;
 }
 
+static inline bool
+uses64bitAddress(const Instruction *ldst)
+{
+   return ldst->src(0).getFile() == FILE_MEMORY_GLOBAL &&
+      ldst->src(0).isIndirect(0) &&
+      ldst->getIndirect(0, 0)->reg.size == 8;
+}
+
 void
 CodeEmitterNVC0::emitSTORE(const Instruction *i)
 {
@@ -1410,6 +1420,8 @@ CodeEmitterNVC0::emitSTORE(const Instruction *i)
    setAddress16(i->src(0));
    srcId(i->src(1), 14);
    srcId(i->src(0).getIndirect(0), 20);
+   if (uses64bitAddress(i))
+      code[1] |= 1 << 26;
 
    emitPredicate(i);
 
@@ -1447,6 +1459,8 @@ CodeEmitterNVC0::emitLOAD(const Instruction *i)
 
    setAddress16(i->src(0));
    srcId(i->src(0).getIndirect(0), 20);
+   if (uses64bitAddress(i))
+      code[1] |= 1 << 26;
 
    emitPredicate(i);
 
@@ -1527,6 +1541,79 @@ CodeEmitterNVC0::emitMOV(const Instruction *i)
 
       emitPredicate(i);
    }
+}
+
+void
+CodeEmitterNVC0::emitSUCLAMPMode(uint8_t subOp)
+{
+   uint8_t m;
+   switch (subOp & ~NV50_IR_SUBOP_SUCLAMP_2D) {
+   case NV50_IR_SUBOP_SUCLAMP_SD(0, 1): m = 0; break;
+   case NV50_IR_SUBOP_SUCLAMP_SD(1, 1): m = 1; break;
+   case NV50_IR_SUBOP_SUCLAMP_SD(2, 1): m = 2; break;
+   case NV50_IR_SUBOP_SUCLAMP_SD(3, 1): m = 3; break;
+   case NV50_IR_SUBOP_SUCLAMP_SD(4, 1): m = 4; break;
+   case NV50_IR_SUBOP_SUCLAMP_PL(0, 1): m = 5; break;
+   case NV50_IR_SUBOP_SUCLAMP_PL(1, 1): m = 6; break;
+   case NV50_IR_SUBOP_SUCLAMP_PL(2, 1): m = 7; break;
+   case NV50_IR_SUBOP_SUCLAMP_PL(3, 1): m = 8; break;
+   case NV50_IR_SUBOP_SUCLAMP_PL(4, 1): m = 9; break;
+   case NV50_IR_SUBOP_SUCLAMP_BL(0, 1): m = 10; break;
+   case NV50_IR_SUBOP_SUCLAMP_BL(1, 1): m = 11; break;
+   case NV50_IR_SUBOP_SUCLAMP_BL(2, 1): m = 12; break;
+   case NV50_IR_SUBOP_SUCLAMP_BL(3, 1): m = 13; break;
+   case NV50_IR_SUBOP_SUCLAMP_BL(4, 1): m = 14; break;
+   default:
+      return;
+   }
+   code[0] |= m << 5;
+   if (subOp & NV50_IR_SUBOP_SUCLAMP_2D)
+      code[1] |= 1 << 16;
+}
+
+void
+CodeEmitterNVC0::emitSUCalc(Instruction *i)
+{
+   ImmediateValue *imm = NULL;
+   uint64_t opc;
+
+   if (i->srcExists(2)) {
+      imm = i->getSrc(2)->asImm();
+      if (imm)
+         i->setSrc(2, NULL); // special case, make emitForm_A not assert
+   }
+
+   switch (i->op) {
+   case OP_SUCLAMP: opc = HEX64(58000000, 00000004); break;
+   case OP_SUBFM: opc = HEX64(5c000000, 00000004); break;
+   case OP_SUEAU: opc = HEX64(60000000, 00000004); break;
+   default:
+      assert(0);
+      return;
+   }
+   emitForm_A(i, opc);
+
+   if (i->subOp)
+      code[1] |= 1 << 16; // SUCLAMP.non-1D or SUBFM.3D
+
+   if (i->op != OP_SUEAU) {
+      if (i->def(0).getFile() == FILE_PREDICATE) { // p, #
+         code[0] |= 63 << 14;
+         code[1] |= i->getDef(0)->reg.data.id << 23;
+      } else
+      if (i->defExists(1)) { // r, p
+         assert(i->def(1).getFile() == FILE_PREDICATE);
+         code[1] |= i->getDef(1)->reg.data.id << 23;
+      } else { // r, #
+         code[1] |= 7 << 23;
+      }
+   }
+   if (imm) {
+      assert(i->op == OP_SUCLAMP);
+      i->setSrc(2, imm);
+      code[1] |= (imm->reg.data.u32 & 0x3f) << 17; // sint6
+   }
+
 }
 
 bool
@@ -1698,6 +1785,11 @@ CodeEmitterNVC0::emitInstruction(Instruction *insn)
       break;
    case OP_TEXBAR:
       emitTEXBAR(insn);
+      break;
+   case OP_SUBFM:
+   case OP_SUCLAMP:
+   case OP_SUEAU:
+      emitSUCalc(insn);
       break;
    case OP_BRA:
    case OP_CALL:
