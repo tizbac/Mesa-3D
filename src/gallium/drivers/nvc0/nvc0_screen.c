@@ -198,7 +198,10 @@ nvc0_screen_get_shader_param(struct pipe_screen *pscreen, unsigned shader,
       */
    case PIPE_SHADER_GEOMETRY:
    case PIPE_SHADER_FRAGMENT:
+      break;
    case PIPE_SHADER_COMPUTE:
+      if (class_3d < NVE4_3D_CLASS)
+         return 0;
       break;
    default:
       return 0;

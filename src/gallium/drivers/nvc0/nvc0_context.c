@@ -212,7 +212,7 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    int ret;
    uint32_t flags;
 
-   debug_printf("sizeof(nvc0_context) = %u\n", sizeof(nvc0_context));
+   debug_printf("sizeof(nvc0_context) = %lu\n", sizeof(struct nvc0_context));
 
    nvc0 = CALLOC_STRUCT(nvc0_context);
    if (!nvc0)
@@ -286,6 +286,7 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->poly_cache);
 
    BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->text);
+   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->uniform_bo);
    BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->txc);
    BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags | NOUVEAU_BO_WR, screen->tls);
 

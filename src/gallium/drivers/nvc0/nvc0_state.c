@@ -493,8 +493,9 @@ static void
 nvc0_cp_sampler_states_bind(struct pipe_context *pipe,
                             unsigned start, unsigned nr, void **cso)
 {
+   struct nvc0_context *nvc0 = nvc0_context(pipe);
    const unsigned s = 5;
-   const unsigned end = start + nr + 1;
+   const unsigned end = start + nr;
    int last_valid = -1;
    unsigned i;
 
@@ -518,7 +519,7 @@ nvc0_cp_sampler_states_bind(struct pipe_context *pipe,
             nvc0->num_samplers[s] = last_valid + 1;
       }
    } else {
-      for (i = first; i < end; ++i) {
+      for (i = start; i < end; ++i) {
          if (nvc0->samplers[s][i]) {
             nvc0_screen_tsc_unlock(nvc0->screen, nvc0->samplers[s][i]);
             nvc0->samplers[s][i] = NULL;
@@ -608,25 +609,26 @@ nvc0_cp_set_sampler_views(struct pipe_context *pipe,
                           unsigned start, unsigned nr,
                           struct pipe_sampler_view **views)
 {
+   struct nvc0_context *nvc0 = nvc0_context(pipe);
    const unsigned s = 5;
-   const unsigned end = first + nr + 1;
+   const unsigned end = start + nr;
    int last_valid = -1;
    unsigned i;
 
    if (views) {
-      for (i = first; i < end; ++i) {
+      for (i = start; i < end; ++i) {
          struct nv50_tic_entry *old = nv50_tic_entry(nvc0->textures[s][i]);
-         if (view[i])
+         if (views[i])
             last_valid = i;
          if (views[i] == nvc0->textures[s][i])
             continue;
-         nv50->textures_dirty[s] |= 1 << i;
+         nvc0->textures_dirty[s] |= 1 << i;
 
          if (old) {
             nouveau_bufctx_reset(nvc0->bufctx_cp, NVC0_BIND_CP_TEX(i));
             nvc0_screen_tic_unlock(nvc0->screen, old);
          }
-         pipe_sampler_view_reference(&nvc0->textures[s][i], viewſ[i]);
+         pipe_sampler_view_reference(&nvc0->textures[s][i], views[i]);
       }
       if (last_valid < 0) {
          for (i = start; i > 0 && !nvc0->textures[s][i - 1]; --i);
@@ -732,7 +734,7 @@ nvc0_gp_state_bind(struct pipe_context *pipe, void *hwcso)
     nvc0->dirty |= NVC0_NEW_GMTYPROG;
 }
 
-static void
+static void *
 nvc0_cp_state_create(struct pipe_context *pipe,
                      const struct pipe_compute_state *cso)
 {
@@ -1041,6 +1043,38 @@ nvc0_set_transform_feedback_targets(struct pipe_context *pipe,
 }
 
 static void
+nvc0_set_compute_resources(struct pipe_context *pipe,
+                           unsigned start, unsigned nr,
+                           struct pipe_surface **resources)
+{
+   struct nvc0_context *nvc0 = nvc0_context(pipe);
+   const unsigned end = start + nr;
+   unsigned i;
+
+   if (resources) {
+      for (i = start; i < end; ++i) {
+         nouveau_bufctx_reset(nvc0->bufctx_cp, NVC0_BIND_CP_SRF(i));
+         pipe_surface_reference(&nvc0->surfaces[i], resources[i]);
+         if (resources[i]) {
+            struct nv04_resource *res = nv04_resource(resources[i]->texture);
+            if (resources[i]->writable)
+               BCTX_REFN(nvc0->bufctx_cp, CP_SRF(i), res, RDWR);
+            else
+               BCTX_REFN(nvc0->bufctx_cp, CP_SRF(i), res, RD);
+         }
+      }
+   } else {
+      for (i = start; i < end; ++i) {
+         nouveau_bufctx_reset(nvc0->bufctx_cp, NVC0_BIND_CP_SRF(i));
+         pipe_surface_reference(&nvc0->surfaces[i], NULL);
+      }
+   }
+   nvc0->surfaces_dirty |= ((1 << nr) - 1) << start;
+
+   nvc0->dirty_cp |= NVC0_NEW_CP_SURFACES;
+}
+
+static void
 nvc0_compute_set_global_bindings(struct pipe_context *pipe,
                                  unsigned start, unsigned nr,
                                  struct pipe_resource **resources,
@@ -1048,7 +1082,7 @@ nvc0_compute_set_global_bindings(struct pipe_context *pipe,
 {
    struct nvc0_context *nvc0 = nvc0_context(pipe);
    unsigned i;
-   const unsigned end = start + nr + 1;
+   const unsigned end = start + nr;
 
    if (resources) {
       for (i = start; i < end; ++i) {
@@ -1058,20 +1092,22 @@ nvc0_compute_set_global_bindings(struct pipe_context *pipe,
          pipe_resource_reference(&nvc0->globals[i], resources[i]);
          if (resources[i]) {
             struct nv04_resource *res = nv04_resource(resources[i]);
-            handles[i] = res->address;
+            debug_printf("handles[%u/(%u,%u)] = %p\n",
+                         i, start, nr, handles[i]);
+            *handles[i] = (uint32_t)res->address;
             if (res->address + res->base.width0 >= (1ULL << 32)) {
                NOUVEAU_ERR("Yikes, buffer outside of 32-bit address space !\n");
-               handles[i] = 0;
+               *handles[i] = 0;
             }
             BCTX_REFN(nvc0->bufctx_cp, CP_GLOBAL(i), res, RDWR);
          } else {
-            handles[i] = 0;
+            *handles[i] = 0;
          }
       }
    } else {
       for (i = start; i < end; ++i) {
          nouveau_bufctx_reset(nvc0->bufctx_cp, NVC0_BIND_CP_GLOBAL(i));
-         pipe_resource_reference(&nvc0->global[i], NULL);
+         pipe_resource_reference(&nvc0->globals[i], NULL);
       }
    }
 }
@@ -1143,5 +1179,7 @@ nvc0_init_state_functions(struct nvc0_context *nvc0)
    pipe->set_stream_output_targets = nvc0_set_transform_feedback_targets;
 
    pipe->set_global_binding = nvc0_compute_set_global_bindings;
+   pipe->set_compute_resources = nvc0_set_compute_resources;
+   pipe->set_shader_resources = NULL;
 }
 

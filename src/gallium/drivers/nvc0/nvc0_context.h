@@ -75,10 +75,11 @@
 
 #define NVC0_BIND_CP_CB(i)     (  0 + (i))
 #define NVC0_BIND_CP_TEX(i)    ( 16 + (i))
-#define NVC0_BIND_CP_SFC(i)    ( 32 + (i))
+#define NVC0_BIND_CP_SRF(i)    ( 32 + (i))
 #define NVC0_BIND_CP_GLOBAL(i) ( 48 + (i))
-#define NVC0_BIND_CP_SCREEN      64
-#define NVC0_BIND_CP_COUNT       65
+#define NVC0_BIND_CP_DESC        64
+#define NVC0_BIND_CP_SCREEN      65
+#define NVC0_BIND_CP_COUNT       66
 
 #define NVC0_BIND_2D            0
 #define NVC0_BIND_M2MF          0
@@ -185,8 +186,9 @@ struct nvc0_context {
 
    struct nvc0_blitctx *blit;
 
-   struct pipe_surface *surfaces[NVC0_MAX_SURFACES];
    struct pipe_resource *globals[NVC0_MAX_GLOBAL_BUFFERS];
+   struct pipe_surface *surfaces[NVC0_MAX_SURFACES];
+   uint32_t surfaces_dirty;
 
 #ifdef NVC0_WITH_DRAW_MODULE
    struct draw_context *draw;
@@ -230,6 +232,8 @@ boolean nvc0_program_translate(struct nvc0_program *, uint16_t chipset);
 boolean nvc0_program_upload_code(struct nvc0_context *, struct nvc0_program *);
 void nvc0_program_destroy(struct nvc0_context *, struct nvc0_program *);
 void nvc0_program_library_upload(struct nvc0_context *);
+uint32_t nvc0_program_symbol_offset(const struct nvc0_program *,
+                                    uint32_t label);
 
 /* nvc0_query.c */
 void nvc0_init_query_functions(struct nvc0_context *);
@@ -337,6 +341,6 @@ void nvc0_push_vbo(struct nvc0_context *, const struct pipe_draw_info *);
 
 /* nve4_compute.c */
 void nve4_launch_grid(struct pipe_context *,
-                      const uint *, const uint *, uint32_t *, const void *);
+                      const uint *, const uint *, uint32_t, const void *);
 
 #endif
