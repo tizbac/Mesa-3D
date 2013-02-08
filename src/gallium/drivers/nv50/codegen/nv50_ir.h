@@ -139,6 +139,15 @@ enum operation
    OP_POPCNT, // bitcount(src0 & src1)
    OP_INSBF,  // insert first src1[8:15] bits of src0 into src2 at src1[0:7]
    OP_EXTBF,
+   OP_VADD,   // byte/word vector operations
+   OP_VAVG,
+   OP_VMIN,
+   OP_VMAX,
+   OP_VSAD,
+   OP_VSET,
+   OP_VSHR,
+   OP_VSHL,
+   OP_VSEL,
    OP_LAST
 };
 
@@ -158,6 +167,15 @@ enum operation
 #define NV50_IR_SUBOP_SUCLAMP_SD(r, d) (( 0 + (r)) | ((d == 2) ? 0x10 : 0))
 #define NV50_IR_SUBOP_SUCLAMP_PL(r, d) (( 5 + (r)) | ((d == 2) ? 0x10 : 0))
 #define NV50_IR_SUBOP_SUCLAMP_BL(r, d) ((10 + (r)) | ((d == 2) ? 0x10 : 0))
+#define NV50_IR_SUBOP_MADSP_SD     0xffff
+// Yes, we could represent those with DataType.
+// Or put the type into operation and have a couple 1000 values in that enum.
+// This will have to do for now.
+// The values are supposed to correspond to nve4 ISA.
+#define NV50_IR_SUBOP_MADSP(a,b,c) (((a) << 8) | ((b) << 4) | (c))
+#define NV50_IR_SUBOP_V1(a,b)      (((b) << 4) | (a) | 0x0100)
+#define NV50_IR_SUBOP_V2(a,b)      (((b) << 4) | (a) | 0x0200)
+#define NV50_IR_SUBOP_V4(a,b)      (((b) << 4) | (a) | 0x0400)
 
 enum DataType
 {
@@ -692,9 +710,7 @@ public:
    RoundMode rnd;
    CacheMode cache;
 
-   uint8_t subOp; // quadop, 1 for mul-high, etc.
-
-   uint8_t sched; // scheduling data (NOTE: maybe move to separate storage)
+   uint16_t subOp; // quadop, 1 for mul-high, etc.
 
    unsigned encSize    : 4; // encoding size in bytes
    unsigned saturate   : 1; // to [0.0f, 1.0f]
@@ -714,6 +730,8 @@ public:
    int8_t predSrc;
    int8_t flagsDef;
    int8_t flagsSrc;
+
+   uint8_t sched; // scheduling data (NOTE: maybe move to separate storage)
 
    BasicBlock *bb;
 

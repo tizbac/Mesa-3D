@@ -169,6 +169,15 @@ const char *operationStr[OP_LAST + 1] =
    "popcnt",
    "insbf",
    "extbf",
+   "vadd",
+   "vavg",
+   "vmin",
+   "vmax",
+   "vsad",
+   "vset",
+   "vshr",
+   "vshl",
+   "vsel",
    "(invalid)"
 };
 
