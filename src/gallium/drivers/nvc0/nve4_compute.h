@@ -18,10 +18,11 @@ nve4_pipe_surface_as_constbuf(struct pipe_surface *sf)
 #define NVE4_CP_INPUT_TEX(i)     (0x1020 + (i) * 4)
 #define NVE4_CP_INPUT_TEX_STRIDE  4
 #define NVE4_CP_INPUT_TEX_MAX     32
-#define NVE4_CP_INPUT_SUF(i)     (0x10c0 + (i) * 4)
-#define NVE4_CP_INPUT_SUF_STRIDE  32
+#define NVE4_CP_INPUT_MS_OFFSETS  0x10c0
+#define NVE4_CP_INPUT_SUF(i)     (0x1100 + (i) * 4)
+#define NVE4_CP_INPUT_SUF_STRIDE  64
 #define NVE4_CP_INPUT_SUF_MAX     32
-#define NVE4_CP_INPUT_SIZE_MAX    0x1500
+#define NVE4_CP_INPUT_SIZE_MAX    0x1900
 
 struct nve4_cp_launch_desc
 {

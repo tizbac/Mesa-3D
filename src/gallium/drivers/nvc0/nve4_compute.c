@@ -107,9 +107,111 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    if (obj_class >= NVF0_COMPUTE_CLASS)
       IMMED_NVC0(push, SUBC_COMPUTE(0x02c4), 1);
 
+   /* MS sample coordinate offsets: these do not work with _ALT modes ! */
+   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, screen->parm->offset + NVE4_CP_INPUT_MS_OFFSETS);
+   PUSH_DATA (push, screen->parm->offset + NVE4_CP_INPUT_MS_OFFSETS);
+   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_SIZE), 2);
+   PUSH_DATA (push, 64);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_UNK0184_UNKVAL);
+   BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 17);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_EXEC_UNKVAL_DATA);
+   PUSH_DATA (push, 0); /* 0 */
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 1); /* 1 */
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 0); /* 2 */
+   PUSH_DATA (push, 1);
+   PUSH_DATA (push, 1); /* 3 */
+   PUSH_DATA (push, 1);
+   PUSH_DATA (push, 2); /* 4 */
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 3); /* 5 */
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 2); /* 6 */
+   PUSH_DATA (push, 1);
+   PUSH_DATA (push, 3); /* 7 */
+   PUSH_DATA (push, 1);
+
    return 0;
 }
 
+
+static void
+nve4_set_surface_info(struct nouveau_pushbuf *push, struct pipe_surface *psf)
+{
+   struct nv50_surface *sf = nv50_surface(psf);
+   struct nv04_resource *res = nv04_resource(sf->base.texture);
+   uint32_t *const info = push->cur;
+
+   info[8] = sf->width;
+   info[9] = sf->height;
+   info[10] = sf->depth;
+   info[11] = 0;
+
+   switch (res->base.target) {
+   case PIPE_TEXTURE_1D_ARRAY:
+      info[12] = 1;
+      break;
+   case PIPE_TEXTURE_2D:
+   case PIPE_TEXTURE_RECT:
+      info[12] = 2;
+      break;
+   case PIPE_TEXTURE_3D:
+      info[12] = 3;
+      break;
+   case PIPE_TEXTURE_2D_ARRAY:
+   case PIPE_TEXTURE_CUBE:
+   case PIPE_TEXTURE_CUBE_ARRAY:
+      info[12] = 4;
+      break;
+   default:
+      info[12] = 0;
+      break;
+   }
+   info[13] = 0;
+
+   info[0] = res->address + sf->offset;
+   info[1] = nve4_su_format_map[sf->base.format];
+
+   switch (util_format_get_blocksizebits(sf->base.format)) {
+   case  16: info[1] |= 1 << 16; break;
+   case  32: info[1] |= 2 << 16; break;
+   case  64: info[1] |= 3 << 16; break;
+   case 128: info[1] |= 4 << 16; break;
+   default:
+      break;
+   }
+
+   if (res->base.target == PIPE_BUFFER) {
+      info[2] = (9 << 24) | (sf->width - 1);
+      info[3] = 0;
+      info[4] = 0;
+      info[5] = 0;
+      info[6] = 0;
+      info[7] = 0;
+      info[14] = 0;
+      info[15] = 0;
+   } else {
+      struct nv50_miptree *mt = nv50_miptree(&res->base);
+      struct nv50_miptree_level *lvl = &mt->level[sf->base.u.tex.level];
+
+      info[2]  = (9 << 24) | (sf->width - 1);
+      info[3]  = (0x88 << 24) | (lvl->pitch / 64);
+      info[4]  = sf->height - 1;
+      info[4] |= (lvl->tile_mode & 0x0f0) << 25;
+      info[4] |= NVC0_TILE_SHIFT_Y(lvl->tile_mode) << 22;
+      info[5]  = mt->layer_stride >> 8;
+      info[6]  = sf->depth - 1;
+      info[6] |= (lvl->tile_mode & 0xf00) << 21;
+      info[6] |= NVC0_TILE_SHIFT_Z(lvl->tile_mode) << 22;
+      info[7]  = 0;
+      info[14] = mt->ms_x;
+      info[15] = mt->ms_y;
+   }
+
+   push->cur += 16;
+}
 
 /*
  * Validate "surfaces" or "resource bindings".
