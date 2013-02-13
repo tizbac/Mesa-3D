@@ -893,55 +893,159 @@ NVC0LoweringPass::loadConst32(Value *ptr, uint32_t off)
    return mkLoadv(TYPE_U32, mkSymbol(FILE_MEMORY_CONST, b, TYPE_U32, off), ptr);
 }
 
-// nve4 surface descriptor:
-// [0x00]: base address >> 8
-// [0x04]: image info (format)
-// [0x08]: width info
-// [0x0c]: pitch
-// [0x10]: height info
-// [0x14]: 3D
-// [0x18]: depth info
-// [0x1c]: 3D
-void
-NVC0LoweringPass::handleSULDSTnve4(TexInstruction *su)
+#define NVE4_SU_INFO_ADDR    0x00
+#define NVE4_SU_INFO_FMT     0x04
+#define NVE4_SU_INFO_DIM_X   0x08
+#define NVE4_SU_INFO_PITCH   0x0c
+#define NVE4_SU_INFO_DIM_Y   0x10
+#define NVE4_SU_INFO_ARRAY   0x14
+#define NVE4_SU_INFO_DIM_Z   0x18
+#define NVE4_SU_INFO_UNK1C   0x1c
+#define NVE4_SU_INFO_DIM(i) (0x08 + (i) * 8)
+#define NVE4_SU_INFO_MS(i)  (0x38 + (i) * 4)
+
+static inline uint16_t getSuClampSubOp(const TexInstruction *su)
 {
+   switch (su->tex.target) {
+   case TEX_TARGET_BUFFER:      return NV50_IR_SUBOP_SUCLAMP_PL(1, 1);
+   case TEX_TARGET_RECT:        return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_1D:          return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_1D_ARRAY:    return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_2D:          return NV50_IR_SUBOP_SUCLAMP_BL(1, 2);
+   case TEX_TARGET_2D_MS:       return NV50_IR_SUBOP_SUCLAMP_BL(1, 2);
+   case TEX_TARGET_2D_ARRAY:    return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_2D_MS_ARRAY: return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_3D:          return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_CUBE:        return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_CUBE_ARRAY:  return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   default:
+      assert(0);
+      return;
+   }
+}
+
+void
+NVC0LoweringPass::adjustCoordinatesMS(TexInstruction *tex)
+{
+   const uint16_t base = prog->driver.io.suInfoBase + tex->tex.r * 64;
+
+   if (tex->tex.target != TEX_TARGET_2D_MS ||
+       tex->tex.target != TEX_TARGET_2D_MS_ARRAY)
+      return;
+   Value *x = tex->getSrc(0);
+   Value *y = tex->getSrc(1);
+   Value *s = tex->getSrc(tex->tex.target.argCount() - 1);
+
+   Value *ms_x = loadConst(base + NVE4_SU_INFO_MS(0));
+   Value *ms_y = loadConst(base + NVE4_SU_INFO_MS(1));
+
+   bld.mkOp2(OP_SHL, TYPE_U32, x, x, ms_x);
+   bld.mkOp2(OP_SHL, TYPE_U32, y, y, ms_y);
+
+   s = bld.mkOp2v(OP_AND, TYPE_U32, t, s, bld.loadImm(NULL, 0x7));
+   s = bld.mkOp2v(OP_SHL, TYPE_U32, t, s, bld.mkImm(2));
+
+   Value *dx = loadConst(s, NVE4_MS_INFO_BASE);
+   Value *dy = loadConst(s, NVE4_MS_INFO_BASE);
+
+   bld.mkOp2(OP_ADD, TYPE_U32, x, x, dx);
+   bld.mkOp2(OP_ADD, TYPE_U32, y, y, dy);
+}
+
+// Sets 64-bit "generic address" and predicate for SULD/SUST.
+void
+NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
+{
+   Instruction *insn;
+   const int dim = su->tex.target.getDim();
+   const uint16_t base = prog->driver.io.suInfoBase + idx * 64;
+   const uint16_t subOp = getSuClampSubOp(su);
+   int c;
+   Value *zero = bld.mkImm(0);
+   Value *info;
+   Value *crd[3];
+   Value *bf, *eau, *off;
+   Value *addr, *pred;
+
+   off = bld.getScratch(4);
+   bf = bld.getSSA(4);
+   eau = bld.getSSA(4);
+   addr = bld.getSSA(8);
+   pred = bld.getScratch(1, FILE_PREDICATE);
+
+   adjustCoordinatesMS(su);
+
+   //   : clamped.x,y,z = suclamp coord.x,y,z
+   // 2d: offset = madsp clamped.y pitch clamped.x
+   // 3d: offset = madsp clamped.z unk1c clamped.y
+   //     offset = madsp offset pitch clamp.x
+   // 1d: addrlo = subfm clamped.x 0 0
+   // 2d: addrlo = subfm clamped.x clamped.y unk1c
+   // 3d: addrlo = subfm clamped.x clamped.y clamped.z
+   // 1d: addrhi = sueau clamped.x & 0xffff, addrlo addrbase
+   // 2d: addrhi = sueau offset addrlo addrbase
+
+   for (c = 0; c < dim; ++c) {
+      dst[c] = bld.getScratch();
+      info = loadConst32(NULL, base + NVE4_SU_INFO_DIM(c));
+      coord = su->getSrc(c);
+      insn = bld.mkOp3(OP_SUCLAMP, TYPE_S32, dst[c], coord, info, zero);
+      insn->subOp = subOp;
+   }
+   if (su->tex.target == TEX_TARGET_BUFFER) {
+      dst[0]->getInsn()->setDef(1, pred);
+      mkOp2(OP_VSHL, TYPE_U32, );
+   } else {
+   }
+
+   if (su->tex.target == TEX_TARGET_3D) {
+      info = loadConst32(NULL, base, NVE4_SU_INFO_UNK1C);
+      insn = bld.mkOp3(OP_MADSP, TYPE_U32, addr, dst[2], info, dst[1]);
+      insn->subOp = NV50_IR_SUBOP_MADSP(4,2,4); // u16l, u16l, u16l
+   }
+
+   insn = bld.mkOp3(OP_SUBFM, TYPE_U32, bf, dst[0], dst[1], dst[2]);
+   insn->subOp = NV50_IR_SUBOP_SUBFM_3D;
+   insn->setDef(1, pred);
+
+   info = loadConst32(NULL, base, NVE4_SU_INFO_PITCH);
+   insn = bld.mkOp3(OP_MADSP, TYPE_U32, addr, addr, info, dst[0]);
+   insn->subOp = NV50_IR_SUBOP_MADSP(0,2,4); // u32 u16l u16l
+
+   info = loadConst32(NULL, base, NVE4_SU_INFO_ADDR);
+   bld.mkOp3(OP_SUEAU, addr, addr, bfm, info);
+
+   bld.mkOp2(OP_MERGE, TYPE_U64, addr, bf, eau);
+}
+
+// We don't patch shaders. Ever.
+// You get an indirect call to our library blob here. But at least it's uniform.
+void
+NVC0LoweringPass::callSurfaceLoadNVE4()
+{
+}
+
+void
+NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
+{
+   processSurfaceCoordsNVE4(su);
+   if (su->op != OP_SULDP)
+      return;
+
+   // Who do we hate more ? The person who decided that nvc0's SULD doesn't
+   // have to support conversion or the person who decided that, in OpenCL,
+   // you don't have to specify the format here like you do in OpenGL ?
+
+   callSurfaceLoadNVE4(su);
+
+   // ==============
+   
    Value *coord[3];
    Value *size[3];
    Value *ptr = NULL;
    uint8_t mode;
 
-   switch (su->tex.target) {
-   case TEX_TARGET_1D:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_2D:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_3D:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_CUBE:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_1D_ARRAY:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_2D_ARRAY:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_CUBE_ARRAY:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_RECT:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   case TEX_TARGET_BUFFER:
-      mode = NV50_IR_SUBOP_SUCLAMP();
-      break;
-   default:
-      assert(0);
-      return;
-   }
+   fmt = loadConst(NULL, base + NVE4_SU_INFO_FMT);
 
    for (c = 0; c < dim; ++c)
       size[c] = loadConst32(ptr, 0x1100 + (u * 0x20) + (0x8 + c * 8));
@@ -1270,11 +1374,10 @@ NVC0LoweringPass::visit(Instruction *i)
       break;
    case OP_SULDB:
    case OP_SULDP:
-      handleSULD(i->asTex());
-      break;
    case OP_SUSTB:
    case OP_SUSTP:
-      handleSUST(i->asTex());
+      if (targ->getChipset() >= NVISA_GK104_CHIPSET)
+         handleSurfaceOpNVE4(i->asTex());
       break;
    default:
       break;
