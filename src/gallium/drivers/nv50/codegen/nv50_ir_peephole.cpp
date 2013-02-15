@@ -2074,7 +2074,8 @@ Instruction::isActionEqual(const Instruction *that) const
        this->rnd != that->rnd ||
        this->ftz != that->ftz ||
        this->dnz != that->dnz ||
-       this->cache != that->cache)
+       this->cache != that->cache ||
+       this->mask != that->mask)
       return false;
 
    return true;

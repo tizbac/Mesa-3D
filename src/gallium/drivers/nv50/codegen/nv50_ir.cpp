@@ -569,6 +569,7 @@ void Instruction::init()
    fixed = 0;
    encSize = 0;
    ipa = 0;
+   mask = 0;
 
    lanes = 0xf;
 

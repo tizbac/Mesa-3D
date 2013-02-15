@@ -171,11 +171,12 @@ enum operation
 // Yes, we could represent those with DataType.
 // Or put the type into operation and have a couple 1000 values in that enum.
 // This will have to do for now.
-// The values are supposed to correspond to nve4 ISA.
-#define NV50_IR_SUBOP_MADSP(a,b,c) (((a) << 8) | ((b) << 4) | (c))
-#define NV50_IR_SUBOP_V1(a,b)      (((b) << 4) | (a) | 0x0100)
-#define NV50_IR_SUBOP_V2(a,b)      (((b) << 4) | (a) | 0x0200)
-#define NV50_IR_SUBOP_V4(a,b)      (((b) << 4) | (a) | 0x0400)
+// The bitfields are supposed to correspond to nve4 ISA.
+#define NV50_IR_SUBOP_MADSP(a,b,c) (((c) << 8) | ((b) << 4) | (a))
+#define NV50_IR_SUBOP_V1(d,a,b)    (((d) << 10) | ((b) << 5) | (a) | 0x0000)
+#define NV50_IR_SUBOP_V2(d,a,b)    (((d) << 10) | ((b) << 5) | (a) | 0x4000)
+#define NV50_IR_SUBOP_V4(d,a,b)    (((d) << 10) | ((b) << 5) | (a) | 0x8000)
+#define NV50_IR_SUBOP_Vn(n)        ((n) >> 14)
 
 enum DataType
 {
@@ -724,6 +725,7 @@ public:
    unsigned lanes      : 4;
    unsigned perPatch   : 1;
    unsigned exit       : 1; // terminate program after insn
+   unsigned mask       : 4; // for vector ops
 
    int8_t postFactor; // MUL/DIV(if < 0) by 1 << postFactor
 
