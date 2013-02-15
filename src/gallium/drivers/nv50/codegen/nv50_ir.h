@@ -162,6 +162,12 @@ enum operation
 #define NV50_IR_SUBOP_EMU_PRERET   1
 #define NV50_IR_SUBOP_TEXBAR(n)    n
 #define NV50_IR_SUBOP_MOV_FINAL    1
+#define NV50_IR_SUBOP_SUST_IGN     0
+#define NV50_IR_SUBOP_SUST_TRAP    1
+#define NV50_IR_SUBOP_SUST_SDCL    3
+#define NV50_IR_SUBOP_SULD_ZERO    0
+#define NV50_IR_SUBOP_SULD_TRAP    1
+#define NV50_IR_SUBOP_SULD_SDCL    3
 #define NV50_IR_SUBOP_SUBFM_3D     1
 #define NV50_IR_SUBOP_SUCLAMP_2D   0x10
 #define NV50_IR_SUBOP_SUCLAMP_SD(r, d) (( 0 + (r)) | ((d == 2) ? 0x10 : 0))
