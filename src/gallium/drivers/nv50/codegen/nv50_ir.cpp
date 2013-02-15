@@ -914,7 +914,7 @@ const struct TexInstruction::Target::Desc TexInstruction::Target::descTable[] =
 {
    { "1D",                1, 1, false, false, false },
    { "2D",                2, 2, false, false, false },
-   { "2D_MS",             2, 2, false, false, false },
+   { "2D_MS",             2, 3, false, false, false },
    { "3D",                3, 3, false, false, false },
    { "CUBE",              2, 3, false, true,  false },
    { "1D_SHADOW",         1, 1, false, false, true  },
@@ -922,7 +922,7 @@ const struct TexInstruction::Target::Desc TexInstruction::Target::descTable[] =
    { "CUBE_SHADOW",       2, 3, false, true,  true  },
    { "1D_ARRAY",          1, 2, true,  false, false },
    { "2D_ARRAY",          2, 3, true,  false, false },
-   { "2D_MS_ARRAY",       2, 3, true,  false, false },
+   { "2D_MS_ARRAY",       2, 4, true,  false, false },
    { "CUBE_ARRAY",        2, 4, true,  true,  false },
    { "1D_ARRAY_SHADOW",   1, 2, true,  false, true  },
    { "2D_ARRAY_SHADOW",   2, 3, true,  false, true  },

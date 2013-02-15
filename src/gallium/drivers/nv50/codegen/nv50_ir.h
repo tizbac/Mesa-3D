@@ -1106,6 +1106,8 @@ public:
 
    void *targetPriv; // e.g. to carry information between passes
 
+   const struct nv50_ir_prog_info *driver; // for driver configuration
+
    void releaseInstruction(Instruction *);
    void releaseValue(Value *);
 };

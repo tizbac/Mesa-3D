@@ -644,10 +644,18 @@ private:
    bool handleManualTXD(TexInstruction *);
    bool handleSULD(TexInstruction *);
    bool handleSUST(TexInstruction *);
+   void handleSurfaceOpNVE4(TexInstruction *);
 
    void checkPredicate(Instruction *);
 
    void readTessCoord(LValue *dst, int c);
+
+   Value *loadResInfo32(Value *ptr, uint32_t off);
+   Value *loadMsInfo32(Value *ptr, uint32_t off);
+
+   void adjustCoordinatesMS(TexInstruction *);
+   void processSurfaceCoordsNVE4(TexInstruction *);
+   void callSurfaceLoadNVE4(TexInstruction *);
 
 private:
    const Target *const targ;
@@ -887,30 +895,59 @@ NVC0LoweringPass::handleTXQ(TexInstruction *txq)
 #if 0
 
 inline Value *
-NVC0LoweringPass::loadConst32(Value *ptr, uint32_t off)
+NVC0LoweringPass::loadResInfo32(Value *ptr, uint32_t off)
 {
-   int b = driver->ucpSlot;
-   return mkLoadv(TYPE_U32, mkSymbol(FILE_MEMORY_CONST, b, TYPE_U32, off), ptr);
+   uint8_t b = prog->driver->io.resInfoCBSlot;
+   off += prog->driver->io.suInfoBase;
+   return bld.
+      mkLoadv(TYPE_U32, mkSymbol(FILE_MEMORY_CONST, b, TYPE_U32, off), ptr);
 }
 
-#define NVE4_SU_INFO_ADDR    0x00
-#define NVE4_SU_INFO_FMT     0x04
-#define NVE4_SU_INFO_DIM_X   0x08
-#define NVE4_SU_INFO_PITCH   0x0c
-#define NVE4_SU_INFO_DIM_Y   0x10
-#define NVE4_SU_INFO_ARRAY   0x14
-#define NVE4_SU_INFO_DIM_Z   0x18
-#define NVE4_SU_INFO_UNK1C   0x1c
-#define NVE4_SU_INFO_DIM(i) (0x08 + (i) * 8)
-#define NVE4_SU_INFO_MS(i)  (0x38 + (i) * 4)
+inline Value *
+NVC0LoweringPass::loadMsInfo32(Value *ptr, uint32_t off)
+{
+   uint8_t b = driver->io.msInfoCBSlot;
+   off += driver->io.msInfoBase;
+   return bld.
+      mkLoadv(TYPE_U32, mkSymbol(FILE_MEMORY_CONST, b, TYPE_U32, off), ptr);
+}
 
-static inline uint16_t getSuClampSubOp(const TexInstruction *su)
+/* On nvc0, surface info is obtained via the surface binding points passed
+ * to the SULD/SUST instructions.
+ * On nve4, surface info is stored in c[] and is used by various special
+ * instructions, e.g. for clamping coordiantes or generating an address.
+ * They couldn't just have added an equivalent to TIC now, couldn't they ?
+ */
+#define NVE4_SU_INFO_ADDR   0x00
+#define NVE4_SU_INFO_FMT    0x04
+#define NVE4_SU_INFO_DIM_X  0x08
+#define NVE4_SU_INFO_PITCH  0x0c
+#define NVE4_SU_INFO_DIM_Y  0x10
+#define NVE4_SU_INFO_ARRAY  0x14
+#define NVE4_SU_INFO_DIM_Z  0x18
+#define NVE4_SU_INFO_UNK1C  0x1c
+#define NVE4_SU_INFO_WIDTH  0x20
+#define NVE4_SU_INFO_HEIGHT 0x24
+#define NVE4_SU_INFO_DEPTH  0x28
+#define NVE4_SU_INFO_ZERO   0x2c
+#define NVE4_SU_INFO_TARGET 0x30
+#define NVE4_SU_INFO_CALL   0x34
+#define NVE4_SU_INFO_MS_X   0x38
+#define NVE4_SU_INFO_MS_Y   0x3c
+
+#define NVE4_SU_INFO_DIM(i)  (0x08 + (i) * 8)
+#define NVE4_SU_INFO_SIZE(i) (0x20 + (i) * 4)
+#define NVE4_SU_INFO_MS(i)   (0x38 + (i) * 4)
+
+static inline uint16_t getSuClampSubOp(const TexInstruction *su, int c)
 {
    switch (su->tex.target) {
    case TEX_TARGET_BUFFER:      return NV50_IR_SUBOP_SUCLAMP_PL(1, 1);
    case TEX_TARGET_RECT:        return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
    case TEX_TARGET_1D:          return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_1D_ARRAY:    return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_1D_ARRAY:    return (c == 1) ?
+                                   NV50_IR_SUBOP_SUCLAMP_PL(1, 2) :
+                                   NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
    case TEX_TARGET_2D:          return NV50_IR_SUBOP_SUCLAMP_BL(1, 2);
    case TEX_TARGET_2D_MS:       return NV50_IR_SUBOP_SUCLAMP_BL(1, 2);
    case TEX_TARGET_2D_ARRAY:    return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
@@ -927,7 +964,7 @@ static inline uint16_t getSuClampSubOp(const TexInstruction *su)
 void
 NVC0LoweringPass::adjustCoordinatesMS(TexInstruction *tex)
 {
-   const uint16_t base = prog->driver.io.suInfoBase + tex->tex.r * 64;
+   const uint16_t base = tex->tex.r * 64;
 
    if (tex->tex.target != TEX_TARGET_2D_MS ||
        tex->tex.target != TEX_TARGET_2D_MS_ARRAY)
@@ -936,92 +973,159 @@ NVC0LoweringPass::adjustCoordinatesMS(TexInstruction *tex)
    Value *y = tex->getSrc(1);
    Value *s = tex->getSrc(tex->tex.target.argCount() - 1);
 
-   Value *ms_x = loadConst(base + NVE4_SU_INFO_MS(0));
-   Value *ms_y = loadConst(base + NVE4_SU_INFO_MS(1));
+   Value *tx = bld.getSSA(), *ty = bld.getSSA(), *ts = bld.getSSA();
 
-   bld.mkOp2(OP_SHL, TYPE_U32, x, x, ms_x);
-   bld.mkOp2(OP_SHL, TYPE_U32, y, y, ms_y);
+   Value *ms_x = loadResInfo32(NULL, base + NVE4_SU_INFO_MS(0));
+   Value *ms_y = loadResInfo32(NULL, base + NVE4_SU_INFO_MS(1));
 
-   s = bld.mkOp2v(OP_AND, TYPE_U32, t, s, bld.loadImm(NULL, 0x7));
-   s = bld.mkOp2v(OP_SHL, TYPE_U32, t, s, bld.mkImm(2));
+   bld.mkOp2(OP_SHL, TYPE_U32, tx, x, ms_x);
+   bld.mkOp2(OP_SHL, TYPE_U32, ty, y, ms_y);
 
-   Value *dx = loadConst(s, NVE4_MS_INFO_BASE);
-   Value *dy = loadConst(s, NVE4_MS_INFO_BASE);
+   s = bld.mkOp2v(OP_AND, TYPE_U32, ts, s, bld.loadImm(NULL, 0x7));
+   s = bld.mkOp2v(OP_SHL, TYPE_U32, ts, ts, bld.mkImm(3));
 
-   bld.mkOp2(OP_ADD, TYPE_U32, x, x, dx);
-   bld.mkOp2(OP_ADD, TYPE_U32, y, y, dy);
+   Value *dx = loadMsInfo32(ts, 0x0);
+   Value *dy = loadMsInfo32(ts, 0x4);
+
+   bld.mkOp2(OP_ADD, TYPE_U32, tx, tx, dx);
+   bld.mkOp2(OP_ADD, TYPE_U32, ty, ty, dy);
+
+   tex->setSrc(0, tx);
+   tex->setSrc(1, ty);
 }
 
-// Sets 64-bit "generic address" and predicate for SULD/SUST.
+// Sets 64-bit "generic address", predicate and format sources for SULD/SUST.
+// They're computed from the coordinates using the surface info in c[] space.
 void
 NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
 {
    Instruction *insn;
+   const int idx = su->tex.r;
    const int dim = su->tex.target.getDim();
-   const uint16_t base = prog->driver.io.suInfoBase + idx * 64;
-   const uint16_t subOp = getSuClampSubOp(su);
-   int c;
+   const uint16_t base = idx * 64;
+   int c, s;
    Value *zero = bld.mkImm(0);
-   Value *info;
-   Value *crd[3];
+   Value *p1 = NULL;
+   Value *v;
+   Value *src[3];
    Value *bf, *eau, *off;
    Value *addr, *pred;
 
    off = bld.getScratch(4);
    bf = bld.getSSA(4);
-   eau = bld.getSSA(4);
    addr = bld.getSSA(8);
    pred = bld.getScratch(1, FILE_PREDICATE);
 
+   bld.setPosition(su, false);
+
    adjustCoordinatesMS(su);
 
-   //   : clamped.x,y,z = suclamp coord.x,y,z
-   // 2d: offset = madsp clamped.y pitch clamped.x
-   // 3d: offset = madsp clamped.z unk1c clamped.y
-   //     offset = madsp offset pitch clamp.x
-   // 1d: addrlo = subfm clamped.x 0 0
-   // 2d: addrlo = subfm clamped.x clamped.y unk1c
-   // 3d: addrlo = subfm clamped.x clamped.y clamped.z
-   // 1d: addrhi = sueau clamped.x & 0xffff, addrlo addrbase
-   // 2d: addrhi = sueau offset addrlo addrbase
-
-   for (c = 0; c < dim; ++c) {
-      dst[c] = bld.getScratch();
-      info = loadConst32(NULL, base + NVE4_SU_INFO_DIM(c));
-      coord = su->getSrc(c);
-      insn = bld.mkOp3(OP_SUCLAMP, TYPE_S32, dst[c], coord, info, zero);
-      insn->subOp = subOp;
+   // calculate clamped coordinates
+   for (c = 0; c < (dim + (su->tex.target.isArray() ? 1 : 0)); ++c) {
+      v = loadResInfo32(NULL, base + NVE4_SU_INFO_DIM(c));
+      src[c] = bld.getScratch();
+      bld.mkOp3(OP_SUCLAMP, TYPE_S32, src[c], su->getSrc(c), v, zero)
+         ->subOp = getSuClampSubOp(su, c);
    }
+   for (; c < 3; ++c)
+      src[c] = zero;
+
+   // set predicate output
    if (su->tex.target == TEX_TARGET_BUFFER) {
-      dst[0]->getInsn()->setDef(1, pred);
-      mkOp2(OP_VSHL, TYPE_U32, );
+      src[0]->getInsn()->setFlagsDef(1, pred);
+   } else
+   if (su->tex.target.isArray()) {
+      p1 = bld.getSSA(1, FILE_PREDICATE);
+      src[dim]->getInsn()->setFlagsDef(1, p1);
+   }
+
+   // calculate pixel offset
+   if (dim == 1) {
+      bld.mkOp2(OP_AND, TYPE_U32, off, src[0], bld.loadImm(NULL, 0xffff));
    } else {
+   if (dim == 3) {
+      v = loadResInfo32(NULL, base + NVE4_SU_INFO_UNK1C);
+      bld.mkOp3(OP_MADSP, off, src[2], v, src[1])
+         ->subOp = NV50_IR_SUBOP_MADSP(4,2,4); // u16l u16l u16l
+
+      v = loadResInfo32(NULL, base + NVE4_SU_INFO_PITCH);
+      bld.mkOp3(OP_MADSP, off, off, v, src[0])
+         ->subOp = NV50_IR_SUBOP_MADSP(0,2,4); // u32 u16l u16l
+   } else {
+      assert(dim == 2);
+      v = loadResInfo32(NULL, base + NVE4_SU_INFO_PITCH);
+      bld.mkOp3(OP_MADSP, off, src[1], v, src[0])
+         ->subOp = NV50_IR_SUBOP_MADSP(4,2,4); // u16l u16l u16l
    }
 
-   if (su->tex.target == TEX_TARGET_3D) {
-      info = loadConst32(NULL, base, NVE4_SU_INFO_UNK1C);
-      insn = bld.mkOp3(OP_MADSP, TYPE_U32, addr, dst[2], info, dst[1]);
-      insn->subOp = NV50_IR_SUBOP_MADSP(4,2,4); // u16l, u16l, u16l
+   // calculate effective address part 1
+   if (su->tex.target == TEX_TARGET_BUFFER) {
+      v = loadResInfo32(NULL, base + NVE4_SU_INFO_FMT);
+      bld.mkOp3(OP_VSHL, TYPE_U32, bf, src[0], v, zero)
+         ->subOp = NV50_IR_SUBOP_V1(0,0,8|2);
+   } else {
+      Value *y = src[1];
+      Value *z = src[2];
+      uint16_t subOp = 0;
+
+      switch (dim) {
+      case 1:
+         y = zero;
+         z = zero;
+         break;
+      case 2:
+         z = off;
+         if (!su->tex.target.isArray()) {
+            z = loadResInfo32(NULL, base + NVE4_SU_INFO_UNK1C);
+            subOp = NV50_IR_SUBOP_SUBFM_3D;
+         }
+         break;
+      default:
+         subOp = NV50_IR_SUBOP_SUBFM_3D;
+         assert(dim == 3);
+         break;
+      }
+      insn = bld.mkOp2(OP_SUBFM, TYPE_U32, bf, src[0], y, z);
+      insn->subOp = subOp;
+      insn->setFlagsDef(1, pred);
    }
 
-   insn = bld.mkOp3(OP_SUBFM, TYPE_U32, bf, dst[0], dst[1], dst[2]);
-   insn->subOp = NV50_IR_SUBOP_SUBFM_3D;
-   insn->setDef(1, pred);
+   // part 2
+   v = loadResInfo32(NULL, base + NVE4_SU_INFO_ADDR);
 
-   info = loadConst32(NULL, base, NVE4_SU_INFO_PITCH);
-   insn = bld.mkOp3(OP_MADSP, TYPE_U32, addr, addr, info, dst[0]);
-   insn->subOp = NV50_IR_SUBOP_MADSP(0,2,4); // u32 u16l u16l
-
-   info = loadConst32(NULL, base, NVE4_SU_INFO_ADDR);
-   bld.mkOp3(OP_SUEAU, addr, addr, bfm, info);
+   if (su->tex.target == TEX_TARGET_BUFFER) {
+      eau = v;
+   } else {
+      eau = bld.mkOp3v(OP_SUEAU, TYPE_U32, bld.getScratch(4), off, bfm, v);
+   }
+   // add array layer offset
+   if (su->tex.target.isArray()) {
+      v = loadResInfo32(NULL, base + NVE4_SU_INFO_ARRAY);
+      if (dim == 1)
+         bld.mkOp2(OP_MADSP, TYPE_U32, eau, src[1], v, eau)
+            ->subOp = NV50_IR_SUBOP_MADSP(4,0,0); // u16 u24 u32
+      else
+         bld.mkOp2(OP_MADSP, TYPE_U32, eau, v, src[2], eau)
+            ->subOp = NV50_IR_SUBOP_MADSP(0,0,0); // u32 u24 u32
+      // combine predicates
+      assert(p1);
+      bld.mkOp2(OP_OR, TYPE_U8, pred, pred, p1);
+   }
 
    bld.mkOp2(OP_MERGE, TYPE_U64, addr, bf, eau);
+
+   // get rid of old coordinate sources
+   su->moveSources(c, 2 - c);
+   // set 64 bit address and 32-bit format sources
+   su->setSrc(0, addr);
+   su->setSrc(1, loadResInfo32(base + NVE4_SU_INFO_FMT));
+   su->setPredicate(pred);
 }
 
 // We don't patch shaders. Ever.
 // You get an indirect call to our library blob here. But at least it's uniform.
 void
-NVC0LoweringPass::callSurfaceLoadNVE4()
+NVC0LoweringPass::callSurfaceLoadNVE4(TexInstruction *su)
 {
 }
 
@@ -1045,10 +1149,10 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
    Value *ptr = NULL;
    uint8_t mode;
 
-   fmt = loadConst(NULL, base + NVE4_SU_INFO_FMT);
+   fmt = loadResInfo32(NULL, base + NVE4_SU_INFO_FMT);
 
    for (c = 0; c < dim; ++c)
-      size[c] = loadConst32(ptr, 0x1100 + (u * 0x20) + (0x8 + c * 8));
+      size[c] = loadResInfo32(ptr, 0x1100 + (u * 0x20) + (0x8 + c * 8));
    for (c = 0; c < dim; ++c) {
       coord[c] = getSSA();
       bld.mkOp2(OP_SUCLAMP, coord[c], su->getSrc(c), size[c]);
