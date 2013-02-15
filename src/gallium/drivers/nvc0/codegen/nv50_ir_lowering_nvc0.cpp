@@ -929,9 +929,9 @@ NVC0LoweringPass::loadMsInfo32(Value *ptr, uint32_t off)
 #define NVE4_SU_INFO_WIDTH  0x20
 #define NVE4_SU_INFO_HEIGHT 0x24
 #define NVE4_SU_INFO_DEPTH  0x28
-#define NVE4_SU_INFO_ZERO   0x2c
-#define NVE4_SU_INFO_TARGET 0x30
-#define NVE4_SU_INFO_CALL   0x34
+#define NVE4_SU_INFO_TARGET 0x2c
+#define NVE4_SU_INFO_CALL   0x30
+#define NVE4_SU_INFO_RAW_X  0x34
 #define NVE4_SU_INFO_MS_X   0x38
 #define NVE4_SU_INFO_MS_Y   0x3c
 
@@ -1000,8 +1000,10 @@ void
 NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
 {
    Instruction *insn;
+   const bool raw = su->op == OP_SULDB || su->op == OP_SUSTB;
    const int idx = su->tex.r;
    const int dim = su->tex.target.getDim();
+   const int arg = dim + (su->tex.target.isArray() ? 1 : 0);
    const uint16_t base = idx * 64;
    int c, s;
    Value *zero = bld.mkImm(0);
@@ -1021,9 +1023,12 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
    adjustCoordinatesMS(su);
 
    // calculate clamped coordinates
-   for (c = 0; c < (dim + (su->tex.target.isArray() ? 1 : 0)); ++c) {
-      v = loadResInfo32(NULL, base + NVE4_SU_INFO_DIM(c));
+   for (c = 0; c < arg; ++c) {
       src[c] = bld.getScratch();
+      if (c == 0 && raw)
+         v = loadResInfo32(NULL, base + NVE4_SU_INFO_RAW_X);
+      else
+         v = loadResInfo32(NULL, base + NVE4_SU_INFO_DIM(c));
       bld.mkOp3(OP_SUCLAMP, TYPE_S32, src[c], su->getSrc(c), v, zero)
          ->subOp = getSuClampSubOp(su, c);
    }
@@ -1115,11 +1120,15 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
 
    bld.mkOp2(OP_MERGE, TYPE_U64, addr, bf, eau);
 
+   // let's hope this works ...
+   v = raw ?
+      bld.loadImm(NULL, 0x04804) : loadResInfo32(NULL, base + NVE4_SU_INFO_FMT);
+
    // get rid of old coordinate sources
    su->moveSources(c, 2 - c);
    // set 64 bit address and 32-bit format sources
    su->setSrc(0, addr);
-   su->setSrc(1, loadResInfo32(base + NVE4_SU_INFO_FMT));
+   su->setSrc(1, v);
    su->setPredicate(pred);
 }
 
