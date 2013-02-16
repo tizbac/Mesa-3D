@@ -1562,6 +1562,25 @@ CodeEmitterNVC0::getSRegEncoding(const ValueRef& ref)
 void
 CodeEmitterNVC0::emitMOV(const Instruction *i)
 {
+   if (i->def(0).getFile() == FILE_PREDICATE) {
+      if (i->src(0).getFile() == FILE_GPR) {
+         code[0] = 0xfc01c003;
+         code[1] = 0x1a8e0000;
+         srcId(i->src(0), 20);
+      } else {
+         code[0] = 0x0001c004;
+         code[1] = 0x0c0e0000;
+         if (i->src(0).getFile() == FILE_IMMEDIATE) {
+            code[0] |= 7 << 20;
+            if (!i->getSrc(0)->reg.data.u32)
+               code[0] |= 1 << 23;
+         } else {
+            srcId(i->src(0), 20);
+         }
+      }
+      defId(i->def(0), 17);
+      emitPredicate(i);
+   } else
    if (i->src(0).getFile() == FILE_SYSTEM_VALUE) {
       uint8_t sr = getSRegEncoding(i->src(0));
 
