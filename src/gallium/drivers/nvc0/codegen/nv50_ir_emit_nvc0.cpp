@@ -675,6 +675,32 @@ CodeEmitterNVC0::emitNOT(Instruction *i)
 void
 CodeEmitterNVC0::emitLogicOp(const Instruction *i, uint8_t subOp)
 {
+   if (i->def(0).getFile() == FILE_PREDICATE) {
+      code[0] = 0x00000004 | (subOp << 30);
+      code[1] = 0x0c000000;
+
+      emitPredicate(i);
+
+      defId(i->def(0), 17);
+      srcId(i->src(0), 20);
+      if (->src(0).mod == Modifier(NV50_IR_MOD_NOT)) code[0] |= 1 << 23;
+      srcId(i->src(1), 26);
+      if (->src(1).mod == Modifier(NV50_IR_MOD_NOT)) code[0] |= 1 << 29;
+
+      if (i->defExists(1)) {
+         defId(i->def(1), 14);
+      } else {
+         code[0] |= 7 << 14;
+      }
+      // (a OP b) OP c
+      if (i->predSrc != 2 && i->srcExists(2)) {
+         code[1] |= subOp << 21;
+         srcId(i->src(2), 17);
+         if (->src(2).mod == Modifier(NV50_IR_MOD_NOT)) code[0] |= 1 << 20;
+      } else {
+         code[1] |= 0x000e0000;
+      }
+   } else
    if (i->encSize == 8) {
       if (isLIMM(i->src(1), TYPE_U32)) {
          emitForm_A(i, HEX64(38000000, 00000002));
