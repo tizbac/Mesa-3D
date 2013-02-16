@@ -102,7 +102,7 @@ enum operation
    OP_JOIN,      // converge
    OP_DISCARD,
    OP_EXIT,
-   OP_MEMBAR,
+   OP_MEMBAR, // memory barrier (mfence, lfence, sfence)
    OP_VFETCH, // indirection 0 in attribute space, indirection 1 is vertex base
    OP_PFETCH, // fetch base address of vertex src0 (immediate) [+ src1]
    OP_EXPORT,
@@ -123,6 +123,7 @@ enum operation
    OP_SULDP, // surface load (formatted)
    OP_SUSTB, // surface store (raw)
    OP_SUSTP, // surface store (formatted)
+   OP_SUREDP, // surface reduction (atomic op)
    OP_SULEA,   // surface load effective address
    OP_SUBFM,   // surface bitfield manipulation
    OP_SUCLAMP, // clamp surface coordinates
@@ -139,6 +140,8 @@ enum operation
    OP_POPCNT, // bitcount(src0 & src1)
    OP_INSBF,  // insert first src1[8:15] bits of src0 into src2 at src1[0:7]
    OP_EXTBF,
+   OP_RED,    // reduction (atomic op)
+   OP_BAR,    // execution barrier
    OP_VADD,   // byte/word vector operations
    OP_VAVG,
    OP_VMIN,
@@ -162,6 +165,24 @@ enum operation
 #define NV50_IR_SUBOP_EMU_PRERET   1
 #define NV50_IR_SUBOP_TEXBAR(n)    n
 #define NV50_IR_SUBOP_MOV_FINAL    1
+#define NV50_IR_SUBOP_MEMBAR_L     1
+#define NV50_IR_SUBOP_MEMBAR_S     2
+#define NV50_IR_SUBOP_MEMBAR_M     3
+#define NV50_IR_SUBOP_MEMBAR_CTA  (0 << 2)
+#define NV50_IR_SUBOP_MEMBAR_GL   (1 << 2)
+#define NV50_IR_SUBOP_MEMBAR_SYS  (2 << 2)
+#define NV50_IR_SUBOP_MEMBAR_DIR(m)   ((m) & 0x3)
+#define NV50_IR_SUBOP_MEMBAR_SCOPE(m) ((m) >> 2)
+#define NV50_IR_SUBOP_RED_ADD      0
+#define NV50_IR_SUBOP_RED_MIN      1
+#define NV50_IR_SUBOP_RED_MAX      2
+#define NV50_IR_SUBOP_RED_INC      3
+#define NV50_IR_SUBOP_RED_DEC      4
+#define NV50_IR_SUBOP_RED_AND      5
+#define NV50_IR_SUBOP_RED_OR       6
+#define NV50_IR_SUBOP_RED_XOR      7
+#define NV50_IR_SUBOP_RED_CAS      8
+#define NV50_IR_SUBOP_RED_EXCH     9
 #define NV50_IR_SUBOP_SUST_IGN     0
 #define NV50_IR_SUBOP_SUST_TRAP    1
 #define NV50_IR_SUBOP_SUST_SDCL    3
@@ -724,7 +745,6 @@ public:
    unsigned join       : 1; // converge control flow (use OP_JOIN until end)
    unsigned fixed      : 1; // prevent dead code elimination
    unsigned terminator : 1; // end of basic block
-   unsigned atomic     : 1;
    unsigned ftz        : 1; // flush denormal to zero
    unsigned dnz        : 1; // denormals, NaN are zero
    unsigned ipa        : 4; // interpolation mode

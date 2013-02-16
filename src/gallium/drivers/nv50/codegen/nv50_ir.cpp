@@ -564,7 +564,6 @@ void Instruction::init()
    terminator = 0;
    ftz = 0;
    dnz = 0;
-   atomic = 0;
    perPatch = 0;
    fixed = 0;
    encSize = 0;
