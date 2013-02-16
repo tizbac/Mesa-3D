@@ -882,6 +882,7 @@ public:
    unsigned absolute : 1;
    unsigned limit    : 1;
    unsigned builtin  : 1; // true for calls to emulation code
+   unsigned indirect : 1; // target in src(0)
 
    union {
       BasicBlock *bb;
