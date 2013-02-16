@@ -966,7 +966,7 @@ FlowInstruction::FlowInstruction(Function *fn, operation op, void *targ)
    if (op == OP_JOIN)
       terminator = targ ? 1 : 0;
 
-   allWarp = absolute = limit = builtin = 0;
+   allWarp = absolute = limit = builtin = indirect = 0;
 }
 
 FlowInstruction *
