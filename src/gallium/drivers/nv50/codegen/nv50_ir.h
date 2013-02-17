@@ -139,7 +139,7 @@ enum operation
    OP_QUADPOP,
    OP_POPCNT, // bitcount(src0 & src1)
    OP_INSBF,  // insert first src1[8:15] bits of src0 into src2 at src1[0:7]
-   OP_EXTBF,
+   OP_EXTBF,  // place bits [K,K+N) of src0 into dst, src1 = 0xNNKK
    OP_PERMT,  // dst = bytes from src2,src0 selected by src1 (nvc0's src order)
    OP_RED,    // reduction (atomic op)
    OP_BAR,    // execution barrier
@@ -166,6 +166,13 @@ enum operation
 #define NV50_IR_SUBOP_EMU_PRERET   1
 #define NV50_IR_SUBOP_TEXBAR(n)    n
 #define NV50_IR_SUBOP_MOV_FINAL    1
+#define NV50_IR_SUBOP_EXTBF_REV    1
+#define NV50_IR_SUBOP_PERMT_F4E    1
+#define NV50_IR_SUBOP_PERMT_B4E    2
+#define NV50_IR_SUBOP_PERMT_RC8    3
+#define NV50_IR_SUBOP_PERMT_ECL    4
+#define NV50_IR_SUBOP_PERMT_ECR    5
+#define NV50_IR_SUBOP_PERMT_RC16   6
 #define NV50_IR_SUBOP_MEMBAR_L     1
 #define NV50_IR_SUBOP_MEMBAR_S     2
 #define NV50_IR_SUBOP_MEMBAR_M     3
