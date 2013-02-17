@@ -140,6 +140,7 @@ enum operation
    OP_POPCNT, // bitcount(src0 & src1)
    OP_INSBF,  // insert first src1[8:15] bits of src0 into src2 at src1[0:7]
    OP_EXTBF,
+   OP_PERMT,  // dst = bytes from src2,src0 selected by src1 (nvc0's src order)
    OP_RED,    // reduction (atomic op)
    OP_BAR,    // execution barrier
    OP_VADD,   // byte/word vector operations

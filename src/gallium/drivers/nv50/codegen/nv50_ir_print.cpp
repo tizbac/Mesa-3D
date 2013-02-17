@@ -170,6 +170,7 @@ const char *operationStr[OP_LAST + 1] =
    "popcnt",
    "insbf",
    "extbf",
+   "permt",
    "red",
    "bar",
    "vadd",

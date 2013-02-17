@@ -45,12 +45,15 @@ const uint8_t Target::operationSrcNr[OP_LAST + 1] =
    1, 1,                   // EMIT, RESTART
    1, 1, 1,                // TEX, TXB, TXL,
    1, 1, 1, 1, 1, 2,       // TXF, TXQ, TXD, TXG, TEXCSAA, TEXPREP
-   1, 1, 2, 2, 2,          // SULDB, SULDP, SUSTB, SUSTP, SULEA
+   1, 1, 2, 2, 2, 2,       // SULDB, SULDP, SUSTB, SUSTP, SUREDP, SULEA
    2, 2, 3, 3,             // SUBFM, SUCLAMP, SUEAU, MADSP
    0,                      // TEXBAR
    1, 1,                   // DFDX, DFDY
    1, 2, 2, 0, 0,          // RDSV, WRSV, QUADOP, QUADON, QUADPOP
-   2, 3, 2                 // POPCNT, INSBF, EXTBF
+   2, 3, 2, 3,             // POPCNT, INSBF, EXTBF, PERMT
+   2, 0,                   // RED, BAR
+   2, 2, 2, 2, 3, 2        // VADD, VAVG, VMIN, VMAX, VSAD, VSET,
+   2, 2, 2,                // VSHR, VSHL, VSEL
    0
 };
 
@@ -112,8 +115,8 @@ const OpClass Target::operationClass[OP_LAST + 1] =
    // DFDX, DFDY, RDSV, WRSV; QUADOP, QUADON, QUADPOP
    OPCLASS_OTHER, OPCLASS_OTHER, OPCLASS_OTHER, OPCLASS_OTHER,
    OPCLASS_OTHER, OPCLASS_OTHER, OPCLASS_OTHER,
-   // POPCNT, INSBF, EXTBF
-   OPCLASS_OTHER, OPCLASS_OTHER, OPCLASS_OTHER,
+   // POPCNT, INSBF, EXTBF, PERMT
+   OPCLASS_OTHER, OPCLASS_OTHER, OPCLASS_OTHER, OPCLASS_OTHER,
    // RED, BAR
    OPCLASS_ATOMIC, OPCLASS_OTHER,
    // VADD, VAVG, VMIN, VMAX
