@@ -30,6 +30,8 @@
 static void nve4_compute_dump_launch_desc(const struct nve4_cp_launch_desc *);
 
 static const uint8_t nve4_su_format_map[PIPE_FORMAT_COUNT];
+static const uint8_t nve4_su_format_aux_map[PIPE_FORMAT_COUNT];
+static const uint16_t nve4_suldp_lib_offset[PIPE_FORMAT_COUNT];
 
 
 int
@@ -138,38 +140,43 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
 
 
 static void
-nve4_set_surface_info(struct nouveau_pushbuf *push, struct pipe_surface *psf)
+nve4_set_surface_info(struct nouveau_pushbuf *push,
+                      struct pipe_surface *psf,
+                      struct nvc0_screen *screen)
 {
    struct nv50_surface *sf = nv50_surface(psf);
    struct nv04_resource *res = nv04_resource(sf->base.texture);
    uint32_t *const info = push->cur;
+   uint8_t fstride;
 
    info[8] = sf->width;
    info[9] = sf->height;
    info[10] = sf->depth;
-   info[11] = 0;
-
    switch (res->base.target) {
    case PIPE_TEXTURE_1D_ARRAY:
-      info[12] = 1;
+      info[11] = 1;
       break;
    case PIPE_TEXTURE_2D:
    case PIPE_TEXTURE_RECT:
-      info[12] = 2;
+      info[11] = 2;
       break;
    case PIPE_TEXTURE_3D:
-      info[12] = 3;
+      info[11] = 3;
       break;
    case PIPE_TEXTURE_2D_ARRAY:
    case PIPE_TEXTURE_CUBE:
    case PIPE_TEXTURE_CUBE_ARRAY:
-      info[12] = 4;
+      info[11] = 4;
       break;
    default:
-      info[12] = 0;
+      info[11] = 0;
       break;
    }
-   info[13] = 0;
+   fstride = (0xf000 & nve4_su_format_aux_map[sf->base.format]) >> 12;
+
+   info[12] = nve4_suldp_lib_offset[sf->base.format] + screen->lib_code->start;
+
+   info[13] = (sf->width << fstride) - 1;
 
    info[0] = res->address + sf->offset;
    info[1] = nve4_su_format_map[sf->base.format];
@@ -184,7 +191,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push, struct pipe_surface *psf)
       break;
    }
 #else
-   info[1] |= (0xf000 & nve4_su_format_aux_map[sf->base.format]) << 4;
+   info[1] |= fstride << 16;
    info[1] |=  0x4000;
    info[1] |= (0x0f00 & nve4_su_format_aux_map[sf->base.format]);
 #endif
@@ -747,5 +754,53 @@ static const uint16_t nve4_su_format_aux_map[PIPE_FORMAT_COUNT] =
    [PIPE_FORMAT_R8_UNORM] = 0x0206,
    [PIPE_FORMAT_R8_SNORM] = 0x0206,
    [PIPE_FORMAT_R8_SINT] = 0x0206,
-   [PIPE_FORMAT_R8_UINT] = 0x0206,
+   [PIPE_FORMAT_R8_UINT] = 0x0206
+};
+
+/* NOTE: These are hardcoded offsets for the shader library.
+ * TODO: Automate them.
+ */
+static const uint16_t nve4_suldp_lib_offset[PIPE_FORMAT_COUNT]
+{
+   [PIPE_FORMAT_R32G32B32A32_FLOAT] = 0x218,
+   [PIPE_FORMAT_R32G32B32A32_SINT]  = 0x218,
+   [PIPE_FORMAT_R32G32B32A32_UINT]  = 0x218,
+   [PIPE_FORMAT_R16G16B16A16_UNORM] = 0x248,
+   [PIPE_FORMAT_R16G16B16A16_SNORM] = 0x2b8,
+   [PIPE_FORMAT_R16G16B16A16_SINT]  = 0x330,
+   [PIPE_FORMAT_R16G16B16A16_UINT]  = 0x388,
+   [PIPE_FORMAT_R16G16B16A16_FLOAT] = 0x3d8,
+   [PIPE_FORMAT_R32G32_FLOAT]       = 0x428,
+   [PIPE_FORMAT_R32G32_SINT]        = 0x468,
+   [PIPE_FORMAT_R32G32_UINT]        = 0x468,
+   [PIPE_FORMAT_R10G10B10A2_UNORM]  = 0x4a8,
+/* [PIPE_FORMAT_R10G10B10A2_UINT]   = 0x530, */
+   [PIPE_FORMAT_R8G8B8A8_UNORM]     = 0x588,
+   [PIPE_FORMAT_R8G8B8A8_SNORM]     = 0x5f8,
+   [PIPE_FORMAT_R8G8B8A8_SINT]      = 0x670,
+   [PIPE_FORMAT_R8G8B8A8_UINT]      = 0x6c8,
+   [PIPE_FORMAT_R5G6B5_UNORM]       = 0x718,
+   [PIPE_FORMAT_R5G5B5X1_UNORM]     = 0x7a0,
+   [PIPE_FORMAT_R16G16_UNORM]       = 0x828,
+   [PIPE_FORMAT_R16G16_SNORM]       = 0x890,
+   [PIPE_FORMAT_R16G16_SINT]        = 0x8f0,
+   [PIPE_FORMAT_R16G16_UINT]        = 0x948,
+   [PIPE_FORMAT_R16G16_FLOAT]       = 0x998,
+   [PIPE_FORMAT_R32_FLOAT]          = 0x9e8,
+   [PIPE_FORMAT_R32_SINT]           = 0xa30,
+   [PIPE_FORMAT_R32_UINT]           = 0xa30,
+   [PIPE_FORMAT_R8G8_UNORM]         = 0xa78,
+   [PIPE_FORMAT_R8G8_SNORM]         = 0xae0,
+   [PIPE_FORMAT_R8G8_UINT]          = 0xb48,
+   [PIPE_FORMAT_R8G8_SINT]          = 0xb98,
+   [PIPE_FORMAT_R16_UNORM]          = 0xbe8,
+   [PIPE_FORMAT_R16_SNORM]          = 0xc48,
+   [PIPE_FORMAT_R16_SINT]           = 0xca0,
+   [PIPE_FORMAT_R16_UINT]           = 0xce8,
+   [PIPE_FORMAT_R16_FLOAT]          = 0xd30,
+   [PIPE_FORMAT_R8_UNORM]           = 0xd88,
+   [PIPE_FORMAT_R8_SNORM]           = 0xde0,
+   [PIPE_FORMAT_R8_SINT]            = 0xe38,
+   [PIPE_FORMAT_R8_UINT]            = 0xe88
+   [PIPE_FORMAT_R11G11B10_FLOAT]    = 0xed0,
 };
