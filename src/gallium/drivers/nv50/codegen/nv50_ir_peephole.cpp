@@ -58,6 +58,7 @@ Instruction::isNop() const
       return true;
    }
 
+   assert(op != OP_BAR && op != OP_MEMBAR);
    return false;
 }
 
@@ -1730,7 +1731,9 @@ MemoryOpt::runOpt(BasicBlock *bb)
          isLoad = false;
       } else {
          // TODO: maybe have all fixed ops act as barrier ?
-         if (ldst->op == OP_CALL) {
+         if (ldst->op == OP_CALL ||
+             ldst->op == OP_BAR ||
+             ldst->op == OP_MEMBAR) {
             purgeRecords(NULL, FILE_MEMORY_LOCAL);
             purgeRecords(NULL, FILE_MEMORY_GLOBAL);
             purgeRecords(NULL, FILE_MEMORY_SHARED);

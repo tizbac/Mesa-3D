@@ -142,7 +142,7 @@ enum operation
    OP_EXTBF,  // place bits [K,K+N) of src0 into dst, src1 = 0xNNKK
    OP_PERMT,  // dst = bytes from src2,src0 selected by src1 (nvc0's src order)
    OP_ATOM,
-   OP_BAR,    // execution barrier
+   OP_BAR,    // execution barrier, sources = { id, thread count, predicate }
    OP_VADD,   // byte/word vector operations
    OP_VAVG,
    OP_VMIN,
@@ -173,6 +173,11 @@ enum operation
 #define NV50_IR_SUBOP_PERMT_ECL    4
 #define NV50_IR_SUBOP_PERMT_ECR    5
 #define NV50_IR_SUBOP_PERMT_RC16   6
+#define NV50_IR_SUBOP_BAR_SYNC     0
+#define NV50_IR_SUBOP_BAR_ARRIVE   1
+#define NV50_IR_SUBOP_BAR_RED_AND  2
+#define NV50_IR_SUBOP_BAR_RED_OR   3
+#define NV50_IR_SUBOP_BAR_RED_POPC 4
 #define NV50_IR_SUBOP_MEMBAR_L     1
 #define NV50_IR_SUBOP_MEMBAR_S     2
 #define NV50_IR_SUBOP_MEMBAR_M     3
@@ -181,6 +186,8 @@ enum operation
 #define NV50_IR_SUBOP_MEMBAR_SYS  (2 << 2)
 #define NV50_IR_SUBOP_MEMBAR_DIR(m)   ((m) & 0x3)
 #define NV50_IR_SUBOP_MEMBAR_SCOPE(m) ((m) & ~0x3)
+#define NV50_IR_SUBOP_MEMBAR(d,s) \
+   (NV50_IR_SUBOP_MEMBAR_##d | NV50_IR_SUBOP_MEMBAR_##s)
 #define NV50_IR_SUBOP_ATOM_ADD      0
 #define NV50_IR_SUBOP_ATOM_MIN      1
 #define NV50_IR_SUBOP_ATOM_MAX      2

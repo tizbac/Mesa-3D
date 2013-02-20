@@ -230,6 +230,7 @@ NV50LegalizePostRA::visit(BasicBlock *bb)
          handlePRERET(i->asFlow());
       } else {
          if (i->op != OP_MOV && i->op != OP_PFETCH &&
+             i->op != OP_BAR &&
              (!i->defExists(0) || i->def(0).getFile() != FILE_ADDRESS))
             replaceZero(i);
          if (typeSizeof(i->dType) == 8)
@@ -1076,6 +1077,10 @@ NV50LoweringPreSSA::visit(Instruction *i)
       return handlePRECONT(i);
    case OP_CONT:
       return handleCONT(i);
+   case OP_MEMBAR:
+      i->op = OP_NOP;
+      i->fixed = 0;
+      break;
    default:
       break;
    }

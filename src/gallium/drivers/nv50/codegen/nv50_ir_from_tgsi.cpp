@@ -600,6 +600,26 @@ static nv50_ir::operation translateOpcode(uint opcode)
    }
 }
 
+static uint16_t opcodeToSubOp(uint opcode)
+{
+   switch (opcode) {
+   case TGSI_OPCODE_LFENCE:   return NV50_IR_SUBOP_MEMBAR(L, CTA);
+   case TGSI_OPCODE_SFENCE:   return NV50_IR_SUBOP_MEMBAR(S, CTA);
+   case TGSI_OPCODE_MFENCE:   return NV50_IR_SUBOP_MEMBAR(M, CTA);
+   case TGSI_OPCODE_ATOMUADD: return NV50_IR_SUBOP_ATOM_ADD;
+   case TGSI_OPCODE_ATOMXCHG: return NV50_IR_SUBOP_ATOM_EXCH;
+   case TGSI_OPCODE_ATOMCAS:  return NV50_IR_SUBOP_ATOM_CAS;
+   case TGSI_OPCODE_ATOMAND:  return NV50_IR_SUBOP_ATOM_AND;
+   case TGSI_OPCODE_ATOMOR:   return NV50_IR_SUBOP_ATOM_OR;
+   case TGSI_OPCODE_ATOMXOR:  return NV50_IR_SUBOP_ATOM_XOR;
+   case TGSI_OPCODE_ATOMUMIN: return NV50_IR_SUBOP_ATOM_MIN;
+   case TGSI_OPCODE_ATOMIMIN: return NV50_IR_SUBOP_ATOM_MIN;
+   case TGSI_OPCODE_ATOMUMAX: return NV50_IR_SUBOP_ATOM_MAX;
+   case TGSI_OPCODE_ATOMIMAX: return NV50_IR_SUBOP_ATOM_MAX;
+   default:
+      return 0;
+   }
+
 bool Instruction::checkDstSrcAliasing() const
 {
    if (insn->Dst[0].Register.Indirect) // no danger if indirect, using memory
@@ -2000,6 +2020,8 @@ Converter::isEndOfSubroutine(uint ip)
 bool
 Converter::handleInstruction(const struct tgsi_full_instruction *insn)
 {
+   Instruction *insn;
+
    Value *dst0[4], *rDst0[4];
    Value *src0, *src1, *src2;
    Value *val0, *val1;
@@ -2514,31 +2536,29 @@ Converter::handleInstruction(const struct tgsi_full_instruction *insn)
    case TGSI_OPCODE_STORE:
       handleSTORE();
       break;
+   case TGSI_OPCODE_BARRIER:
+      insn = mkOp2(OP_BAR, TYPE_U32, NULL, mkImm(0), mkImm(0));
+      insn->fixed = 1;
+      insn->subOp = NV50_IR_SUBOP_BAR_SYNC;
+      break;
+   case TGSI_OPCODE_MFENCE:
+   case TGSI_OPCODE_LFENCE:
+   case TGSI_OPCODE_SFENCE:
+      insn = mkOp(OP_MEMBAR, TYPE_NONE, NULL);
+      insn->fixed = 1;
+      insn->subOp = opcodeToSubOp(tgsi.getOpcode());
+      break;
    case TGSI_OPCODE_ATOMUADD:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_ADD);
-      break;
    case TGSI_OPCODE_ATOMXCHG:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_EXCH);
-      break;
    case TGSI_OPCODE_ATOMCAS:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_CAS);
-      break;
    case TGSI_OPCODE_ATOMAND:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_AND);
-      break;
    case TGSI_OPCODE_ATOMOR:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_OR);
-      break;
    case TGSI_OPCODE_ATOMXOR:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_XOR);
-      break;
    case TGSI_OPCODE_ATOMUMIN:
    case TGSI_OPCODE_ATOMIMIN:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_MIN);
-      break;
    case TGSI_OPCODE_ATOMUMAX:
    case TGSI_OPCODE_ATOMIMAX:
-      handleATOM(dst0, dTy, NV50_IR_SUBOP_ATOM_MAX);
+      handleATOM(dst0, dTy, opcodeToSubOp(tgsi.getOpcode()));
       break;
    default:
       ERROR("unhandled TGSI opcode: %u\n", tgsi.getOpcode());
