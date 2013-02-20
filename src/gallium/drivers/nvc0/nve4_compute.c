@@ -147,7 +147,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
    struct nv50_surface *sf = nv50_surface(psf);
    struct nv04_resource *res = nv04_resource(sf->base.texture);
    uint32_t *const info = push->cur;
-   uint8_t fstride;
+   uint8_t log2cpp;
 
    info[8] = sf->width;
    info[9] = sf->height;
@@ -172,11 +172,11 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
       info[11] = 0;
       break;
    }
-   fstride = (0xf000 & nve4_su_format_aux_map[sf->base.format]) >> 12;
+   log2cpp = (0xf000 & nve4_su_format_aux_map[sf->base.format]) >> 12;
 
    info[12] = nve4_suldp_lib_offset[sf->base.format] + screen->lib_code->start;
 
-   info[13] = (sf->width << fstride) - 1;
+   info[13] = (sf->width << log2cpp) - 1;
 
    info[0] = res->address + sf->offset;
    info[1] = nve4_su_format_map[sf->base.format];
@@ -191,7 +191,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
       break;
    }
 #else
-   info[1] |= fstride << 16;
+   info[1] |= log2cpp << 16;
    info[1] |=  0x4000;
    info[1] |= (0x0f00 & nve4_su_format_aux_map[sf->base.format]);
 #endif
