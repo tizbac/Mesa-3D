@@ -180,7 +180,7 @@ enum operation
 #define NV50_IR_SUBOP_MEMBAR_GL   (1 << 2)
 #define NV50_IR_SUBOP_MEMBAR_SYS  (2 << 2)
 #define NV50_IR_SUBOP_MEMBAR_DIR(m)   ((m) & 0x3)
-#define NV50_IR_SUBOP_MEMBAR_SCOPE(m) ((m) >> 2)
+#define NV50_IR_SUBOP_MEMBAR_SCOPE(m) ((m) & ~0x3)
 #define NV50_IR_SUBOP_ATOM_ADD      0
 #define NV50_IR_SUBOP_ATOM_MIN      1
 #define NV50_IR_SUBOP_ATOM_MAX      2
