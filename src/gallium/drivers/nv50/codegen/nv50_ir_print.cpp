@@ -171,7 +171,7 @@ const char *operationStr[OP_LAST + 1] =
    "insbf",
    "extbf",
    "permt",
-   "red",
+   "atom",
    "bar",
    "vadd",
    "vavg",
@@ -185,7 +185,7 @@ const char *operationStr[OP_LAST + 1] =
    "(invalid)"
 };
 
-static const char *redSubOpStr[] =
+static const char *atomSubOpStr[] =
 {
    "add", "min", "max", "inc", "dec", "and", "or", "xor", "cas", "exch"
 };
@@ -519,9 +519,9 @@ void Instruction::print() const
          PRINT("%s ", interpStr[ipa]);
       if (subOp) {
          switch (i->op) {
-         case OP_RED:
-            if (i->subOp < ARRAY_SIZE(redSubOpStr))
-               PRINT("%s ", redSubOpStr[i->subOp]);
+         case OP_ATOM:
+            if (i->subOp < ARRAY_SIZE(atomSubOpStr))
+               PRINT("%s ", atomSubOpStr[i->subOp]);
             break;
          default:
             PRINT("(SUBOP:%u) ", subOp);

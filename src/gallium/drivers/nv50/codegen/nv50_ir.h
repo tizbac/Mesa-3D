@@ -141,7 +141,7 @@ enum operation
    OP_INSBF,  // insert first src1[8:15] bits of src0 into src2 at src1[0:7]
    OP_EXTBF,  // place bits [K,K+N) of src0 into dst, src1 = 0xNNKK
    OP_PERMT,  // dst = bytes from src2,src0 selected by src1 (nvc0's src order)
-   OP_RED,    // reduction (atomic op)
+   OP_ATOM,
    OP_BAR,    // execution barrier
    OP_VADD,   // byte/word vector operations
    OP_VAVG,
@@ -181,16 +181,16 @@ enum operation
 #define NV50_IR_SUBOP_MEMBAR_SYS  (2 << 2)
 #define NV50_IR_SUBOP_MEMBAR_DIR(m)   ((m) & 0x3)
 #define NV50_IR_SUBOP_MEMBAR_SCOPE(m) ((m) >> 2)
-#define NV50_IR_SUBOP_RED_ADD      0
-#define NV50_IR_SUBOP_RED_MIN      1
-#define NV50_IR_SUBOP_RED_MAX      2
-#define NV50_IR_SUBOP_RED_INC      3
-#define NV50_IR_SUBOP_RED_DEC      4
-#define NV50_IR_SUBOP_RED_AND      5
-#define NV50_IR_SUBOP_RED_OR       6
-#define NV50_IR_SUBOP_RED_XOR      7
-#define NV50_IR_SUBOP_RED_CAS      8
-#define NV50_IR_SUBOP_RED_EXCH     9
+#define NV50_IR_SUBOP_ATOM_ADD      0
+#define NV50_IR_SUBOP_ATOM_MIN      1
+#define NV50_IR_SUBOP_ATOM_MAX      2
+#define NV50_IR_SUBOP_ATOM_INC      3
+#define NV50_IR_SUBOP_ATOM_DEC      4
+#define NV50_IR_SUBOP_ATOM_AND      5
+#define NV50_IR_SUBOP_ATOM_OR       6
+#define NV50_IR_SUBOP_ATOM_XOR      7
+#define NV50_IR_SUBOP_ATOM_CAS      8
+#define NV50_IR_SUBOP_ATOM_EXCH     9
 #define NV50_IR_SUBOP_SUST_IGN     0
 #define NV50_IR_SUBOP_SUST_TRAP    1
 #define NV50_IR_SUBOP_SUST_SDCL    3

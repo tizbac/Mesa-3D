@@ -643,7 +643,7 @@ private:
    bool handleTXQ(TexInstruction *);
    bool handleManualTXD(TexInstruction *);
    void handleSurfaceOpNVE4(TexInstruction *);
-   bool handleRED(Instruction *);
+   bool handleATOM(Instruction *);
 
    void checkPredicate(Instruction *);
 
@@ -1206,7 +1206,7 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
             pred->getInsn()->src(1).mod = Modifier(NV50_IR_MOD_NOT);
          }
       }
-      Instruction *red = bld.mkOp(OP_RED, i->dType, su->getDef(0));
+      Instruction *red = bld.mkOp(OP_ATOM, i->dType, su->getDef(0));
       red->subOp = su->subOp;
       red->setPredicate(cc, pred);
       if (!gMemBase)
@@ -1218,11 +1218,11 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
 }
 
 bool
-NVC0LoweringPass::handleRED(Instruction *red)
+NVC0LoweringPass::handleATOM(Instruction *atom)
 {
    SVSemantic sv;
 
-   switch (red->src(0).getFile()) {
+   switch (atom->src(0).getFile()) {
    case FILE_MEMORY_LOCAL:
       sv = SV_LBASE;
       break;
@@ -1230,18 +1230,18 @@ NVC0LoweringPass::handleRED(Instruction *red)
       sv = SV_SBASE;
       break;
    default:
-      assert(red->src(0).getFile() == FILE_MEMORY_GLOBAL);
+      assert(atom->src(0).getFile() == FILE_MEMORY_GLOBAL);
       return true;
    }
    LValue *base =
       bld.mkOp1v(OP_RDSV, TYPE_U32, bld.getScratch(), bld.mkSysVal(sv, 0));
-   LValue *ptr = red->getIndirect(0, 0);
+   LValue *ptr = atom->getIndirect(0, 0);
 
-   red->setSrc(0, cloneShallow(func, red->getSrc(0)));
-   red->getSrc(0)->reg.file = FILE_MEMORY_GLOBAL;
+   atom->setSrc(0, cloneShallow(func, atom->getSrc(0)));
+   atom->getSrc(0)->reg.file = FILE_MEMORY_GLOBAL;
    if (ptr)
       base = bld.mkOp2v(OP_ADD, TYPE_U32, base, base, ptr);
-   red->setIndirect(0, 0, base);
+   atom->setIndirect(0, 0, base);
 }
 
 bool
@@ -1510,8 +1510,8 @@ NVC0LoweringPass::visit(Instruction *i)
       if (targ->getChipset() >= NVISA_GK104_CHIPSET)
          handleSurfaceOpNVE4(i->asTex());
       break;
-   case OP_RED:
-      handleRED(i);
+   case OP_ATOM:
+      handleATOM(i);
       break;
    default:
       break;

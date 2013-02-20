@@ -78,7 +78,7 @@ private:
    void emitLOAD(const Instruction *);
    void emitSTORE(const Instruction *);
    void emitMOV(const Instruction *);
-   void emitRED(const Instruction *);
+   void emitATOM(const Instruction *);
 
    void emitINTERP(const Instruction *);
    void emitPFETCH(const Instruction *);
@@ -1653,24 +1653,24 @@ CodeEmitterNVC0::emitMOV(const Instruction *i)
 }
 
 void
-CodeEmitterNVC0::emitRED(const Instruction *i)
+CodeEmitterNVC0::emitATOM(const Instruction *i)
 {
    const bool hasDst = i->defExists(0);
 
    if (i->dType == TYPE_U64) {
       switch (i->subOp) {
-      case NV50_IR_SUBOP_RED_ADD:
+      case NV50_IR_SUBOP_ATOM_ADD:
          code[0] = 0x205;
          if (hasDst)
             code[1] = 0x507e0000;
          else
             code[1] = 0x10000000;
          break;
-      case NV50_IR_SUBOP_RED_EXCH:
+      case NV50_IR_SUBOP_ATOM_EXCH:
          code[0] = 0x305;
          code[1] = 0x507e0000;
          break;
-      case NV50_IR_SUBOP_RED_CAS:
+      case NV50_IR_SUBOP_ATOM_CAS:
          code[0] = 0x325;
          code[1] = 0x50000000;
          break;
@@ -1707,7 +1707,7 @@ CodeEmitterNVC0::emitRED(const Instruction *i)
          code[1] = 0x18000000;
    } else
    if (i->dType == TYPE_F32) {
-      assert(i->subOp == NV50_IR_SUBOP_RED_ADD);
+      assert(i->subOp == NV50_IR_SUBOP_ATOM_ADD);
       code[0] = 0x205;
       if (hasDst)
          code[1] = 0x687e0000;
@@ -1738,7 +1738,7 @@ CodeEmitterNVC0::emitRED(const Instruction *i)
       code[0] |= 63 << 20;
    }
 
-   if (i->subOp == NV50_IR_SUBOP_RED_CAS) {
+   if (i->subOp == NV50_IR_SUBOP_ATOM_CAS) {
       assert(hasDst);
       srcId(i->src(2), 32 + 17);
    }
@@ -2154,8 +2154,8 @@ CodeEmitterNVC0::emitInstruction(Instruction *insn)
       else
          ERROR("SUSTx not yet supported on < nve4\n");
       break;
-   case OP_RED:
-      emitRED(insn);
+   case OP_ATOM:
+      emitATOM(insn);
       break;
    case OP_BRA:
    case OP_CALL:
