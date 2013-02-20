@@ -123,8 +123,8 @@ private:
    void emitFlow(const Instruction *);
 
    void emitSUCalc(Instruction *);
-   void emitSULDB(const TexInstruction *);
-   void emitSUST(const TexInstruction *);
+   void emitSULDGB(const TexInstruction *);
+   void emitSUSTGx(const TexInstruction *);
 
    void emitVSHL(const Instruction *);
    void emitVectorSubOp(const Instruction *);
@@ -1859,7 +1859,7 @@ CodeEmitterNVC0::setSUPred(const Instruction *i, const int s)
 }
 
 void
-CodeEmitterNVC0::emitSULDB(const TexInstruction *i)
+CodeEmitterNVC0::emitSULDGB(const TexInstruction *i)
 {
    code[0] = 0x5;
    code[1] = 0xd4000000 | (i->subOp << 15);
@@ -1880,7 +1880,7 @@ CodeEmitterNVC0::emitSULDB(const TexInstruction *i)
 }
 
 void
-CodeEmitterNVC0::emitSUST(const TexInstruction *i)
+CodeEmitterNVC0::emitSUSTGx(const TexInstruction *i)
 {
    code[0] = 0x5;
    code[1] = 0xdc000000 | (i->subOp << 15);
@@ -1899,8 +1899,8 @@ CodeEmitterNVC0::emitSUST(const TexInstruction *i)
       srcId(i->src(1), 26);
    else
       setSUConst16(i, 1);
-   srcId(i->src(2), 14); // values
-   setSUPred(i, 3);
+   srcId(i->src(3), 14); // values
+   setSUPred(i, 2);
 }
 
 void
@@ -2142,11 +2142,17 @@ CodeEmitterNVC0::emitInstruction(Instruction *insn)
       emitMADSP(insn);
       break;
    case OP_SULDB:
-      emitSULDB(insn->asTex());
+      if (targ->getChipset() >= NVISA_GK104_CHIPSET)
+         emitSULDGB(insn->asTex());
+      else
+         ERROR("SULDB not yet supported on < nve4\n");
       break;
    case OP_SUSTB:
    case OP_SUSTP:
-      emitSUST(insn->asTex());
+      if (targ->getChipset() >= NVISA_GK104_CHIPSET)
+         emitSUSTGx(insn->asTex());
+      else
+         ERROR("SUSTx not yet supported on < nve4\n");
       break;
    case OP_RED:
       emitRED(insn);
