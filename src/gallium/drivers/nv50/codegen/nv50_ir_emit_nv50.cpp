@@ -104,7 +104,7 @@ private:
    void emitMINMAX(const Instruction *);
 
    void emitPreOp(const Instruction *);
-   void emitSFnOp(const Instruction *, uint8_t subOp);
+   void emitSFnOp(const Instruction *, uint16_t subOp);
 
    void emitShift(const Instruction *);
    void emitARL(const Instruction *, unsigned int shl);
