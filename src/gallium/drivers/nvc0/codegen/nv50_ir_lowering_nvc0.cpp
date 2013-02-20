@@ -643,6 +643,7 @@ private:
    bool handleTXQ(TexInstruction *);
    bool handleManualTXD(TexInstruction *);
    void handleSurfaceOpNVE4(TexInstruction *);
+   bool handleRED(Instruction *);
 
    void checkPredicate(Instruction *);
 
@@ -1217,6 +1218,33 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
 }
 
 bool
+NVC0LoweringPass::handleRED(Instruction *red)
+{
+   SVSemantic sv;
+
+   switch (red->src(0).getFile()) {
+   case FILE_MEMORY_LOCAL:
+      sv = SV_LBASE;
+      break;
+   case FILE_MEMORY_SHARED:
+      sv = SV_SBASE;
+      break;
+   default:
+      assert(red->src(0).getFile() == FILE_MEMORY_GLOBAL);
+      return true;
+   }
+   LValue *base =
+      bld.mkOp1v(OP_RDSV, TYPE_U32, bld.getScratch(), bld.mkSysVal(sv, 0));
+   LValue *ptr = red->getIndirect(0, 0);
+
+   red->setSrc(0, cloneShallow(func, red->getSrc(0)));
+   red->getSrc(0)->reg.file = FILE_MEMORY_GLOBAL;
+   if (ptr)
+      base = bld.mkOp2v(OP_ADD, TYPE_U32, base, base, ptr);
+   red->setIndirect(0, 0, base);
+}
+
+bool
 NVC0LoweringPass::handleWRSV(Instruction *i)
 {
    Instruction *st;
@@ -1481,6 +1509,9 @@ NVC0LoweringPass::visit(Instruction *i)
    case OP_SUREDP:
       if (targ->getChipset() >= NVISA_GK104_CHIPSET)
          handleSurfaceOpNVE4(i->asTex());
+      break;
+   case OP_RED:
+      handleRED(i);
       break;
    default:
       break;
