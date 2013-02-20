@@ -185,6 +185,11 @@ const char *operationStr[OP_LAST + 1] =
    "(invalid)"
 };
 
+static const char *redSubOpStr[] =
+{
+   "add", "min", "max", "inc", "dec", "and", "or", "xor", "cas", "exch"
+};
+
 static const char *DataTypeStr[] =
 {
    "-",
@@ -508,8 +513,17 @@ void Instruction::print() const
       PRINT("%s ", operationStr[op]);
       if (op == OP_LINTERP || op == OP_PINTERP)
          PRINT("%s ", interpStr[ipa]);
-      if (subOp)
-         PRINT("(SUBOP:%u) ", subOp);
+      if (subOp) {
+         switch (i->op) {
+         case OP_RED:
+            if (i->subOp < ARRAY_SIZE(redSubOpStr))
+               PRINT("%s ", redSubOpStr[i->subOp]);
+            break;
+         default:
+            PRINT("(SUBOP:%u) ", subOp);
+            break;
+         }
+      }
       if (perPatch)
          PRINT("patch ");
       if (asTex())
