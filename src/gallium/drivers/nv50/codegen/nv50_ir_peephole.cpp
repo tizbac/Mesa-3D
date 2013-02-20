@@ -37,6 +37,8 @@ Instruction::isNop() const
       return true;
    if (terminator || join) // XXX: should terminator imply flow ?
       return false;
+   if (op == OP_ATOM)
+      return false;
    if (!fixed && op == OP_NOP)
       return true;
 
@@ -56,6 +58,7 @@ Instruction::isNop() const
       return true;
    }
 
+   assert(op != OP_BAR && op != OP_MEMBAR);
    return false;
 }
 
@@ -63,7 +66,8 @@ bool Instruction::isDead() const
 {
    if (op == OP_STORE ||
        op == OP_EXPORT ||
-       op == OP_WRSV)
+       op == OP_WRSV ||
+       op == OP_ATOM)
       return false;
 
    for (int d = 0; defExists(d); ++d)
@@ -1727,11 +1731,22 @@ MemoryOpt::runOpt(BasicBlock *bb)
          isLoad = false;
       } else {
          // TODO: maybe have all fixed ops act as barrier ?
-         if (ldst->op == OP_CALL) {
+         if (ldst->op == OP_CALL ||
+             ldst->op == OP_BAR ||
+             ldst->op == OP_MEMBAR) {
             purgeRecords(NULL, FILE_MEMORY_LOCAL);
             purgeRecords(NULL, FILE_MEMORY_GLOBAL);
             purgeRecords(NULL, FILE_MEMORY_SHARED);
             purgeRecords(NULL, FILE_SHADER_OUTPUT);
+         } else
+         if (ldst->op == OP_ATOM) {
+            if (ldst->src(0).getFile() == FILE_MEMORY_GLOBAL) {
+               purgeRecords(NULL, FILE_MEMORY_LOCAL);
+               purgeRecords(NULL, FILE_MEMORY_GLOBAL);
+               purgeRecords(NULL, FILE_MEMORY_SHARED);
+            } else {
+               purgeRecords(NULL, ldst->src(0).getFile());
+            }
          } else
          if (ldst->op == OP_EMIT || ldst->op == OP_RESTART) {
             purgeRecords(NULL, FILE_SHADER_OUTPUT);
@@ -2286,6 +2301,11 @@ DeadCodeElim::visit(BasicBlock *bb)
       } else
       if (i->defExists(1) && (i->op == OP_VFETCH || i->op == OP_LOAD)) {
          checkSplitLoad(i);
+      } else
+      if (i->defExists(0) && !i->getDef(0)->refCount()) {
+         if (i->op == OP_ATOM ||
+             i->op == OP_SUREDP)
+            i->setDef(0, NULL);
       }
    }
    return true;
