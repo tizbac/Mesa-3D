@@ -228,43 +228,19 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
    push->cur += 16;
 }
 
-/*
- * Validate "surfaces" or "resource bindings".
- *
- * Texture-like surfaces are accessed via SULD/SUST.
- * Read-only buffer-like surfaces are accessed as constant buffers.
- * Read/write buffer-like surfaces are accessed via g[].
- *
- * There are also "global" resources (always plain linear memory), their
- * addresses are passed at user defined offsets in the input area.
- * But What exactly is the difference to r/w buffer-like surfaces ?
- */
 static void
 nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
 {
    struct nvc0_screen *screen = nvc0->screen;
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
-   struct nouveau_bo *bo = nvc0->screen->uniform_bo;
    struct nv50_surface *sf;
-   const unsigned start = ffs(nvc0->surfaces_dirty) - 1;
-   const unsigned end = util_logbase2(nvc0->surfaces_dirty) + 1;
    unsigned i;
-   unsigned cb;
-
-   if (!nvc0->surfaces_dirty)
-      return;
-
-   for (cb = 0, i = 0; i < start; ++i)
-      cb += nve4_pipe_surface_as_constbuf(nvc0->surfaces[i]) ? 1 : 0;
 
    while (nvc0->surfaces_dirty) {
-      uint64_t address = 0;
-
       i = ffs(nvc0->surfaces_dirty) - 1;
       nvc0->surfaces_dirty &= ~(1 << i);
 
       sf = nv50_surface(nvc0->surfaces[i]);
-
       /*
        * NVE4's surface load/store instructions receive all the information
        * directly instead of via binding points, so we have to supply them.
@@ -273,53 +249,27 @@ nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
       PUSH_DATAh(push, screen->parm->offset + NVE4_CP_INPUT_SUF(i));
       PUSH_DATA (push, screen->parm->offset + NVE4_CP_INPUT_SUF(i));
       BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_SIZE), 2);
-      PUSH_DATA (push, 32);
+      PUSH_DATA (push, 64);
       PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_UNK0184_UNKVAL);
-      BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 9);
+      BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 17);
       PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_EXEC_UNKVAL_DATA);
       if (sf) {
-         struct nv04_resource *res = nv04_resource(sf->base.texture);
-         if (res->base.target == PIPE_BUFFER) {
-            PUSH_DATA (push, 0);
-            PUSH_DATA (push, 0x80004000);
-            PUSH_DATA (push, 0);
-            PUSH_DATA (push, 0);
-#ifdef PIPE_ARCH_BIG_ENDIAN
-            PUSH_DATAh(push, res->address + sf->offset);
-            PUSH_DATA (push, res->address + sf->offset);
-#else
-            PUSH_DATA (push, res->address + sf->offset);
-            PUSH_DATAh(push, res->address + sf->offset);
-#endif
-            PUSH_DATA (push, 0);
-            PUSH_DATA (push, 0);
-            if (nve4_pipe_surface_as_constbuf(&sf->base)) {
-               pipe_resource_reference(&nvc0->constbuf[5][cb].u.buf,
-                                       sf->base.texture);
-               nvc0->constbuf[5][cb].offset = sf->offset & ~0xff;
-               nvc0->constbuf[5][cb].size = sf->width;
-               nvc0->constbuf_dirty[5] |= 1 << cb++;
-            }
-         } else {
-            struct nv50_miptree *mt = nv50_miptree(&res->base);
-            struct nv50_miptree_level *lvl = &mt->level[sf->base.u.tex.level];
-            PUSH_DATA (push, (res->address + sf->offset) >> 8);
-            PUSH_DATA (push, nve4_su_format_map[sf->base.format]);
-            PUSH_DATA (push, (1 << 28) | (2 << 22) | (sf->width - 1));
-            PUSH_DATA (push, 0x88000000 | (lvl->pitch / 64));
-            PUSH_DATA (push, (lvl->tile_mode & 0x0f0) << (29 - 4) |
-                       (NVC0_TILE_SIZE_Y(lvl->tile_mode) << 22) |
-                       (sf->height - 1));
-            PUSH_DATA (push, 0);
-            PUSH_DATA (push, (sf->depth - 1));
-            PUSH_DATA (push, 0);
-         }
+         nve4_set_surface_info(push, &sf->base, screen);
       } else {
          PUSH_DATA (push, 0);
          PUSH_DATA (push, 0x80004000);
          PUSH_DATA (push, 0);
          PUSH_DATA (push, 0);
          PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, 0);
+         PUSH_DATA (push, screen->lib_code->start +
+                    nve4_suldp_lib_offset[PIPE_FORMAT_RGBA32_UINT]);
          PUSH_DATA (push, 0);
          PUSH_DATA (push, 0);
          PUSH_DATA (push, 0);
