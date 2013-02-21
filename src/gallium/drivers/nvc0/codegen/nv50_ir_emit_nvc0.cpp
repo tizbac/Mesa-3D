@@ -89,11 +89,14 @@ private:
 
    void emitUADD(const Instruction *);
    void emitFADD(const Instruction *);
+   void emitDADD(const Instruction *);
    void emitUMUL(const Instruction *);
    void emitFMUL(const Instruction *);
+   void emitDMUL(const Instruction *);
    void emitIMAD(const Instruction *);
    void emitISAD(const Instruction *);
    void emitFMAD(const Instruction *);
+   void emitDFMA(const Instruction *);
    void emitMADSP(const Instruction *);
 
    void emitNOT(Instruction *);
@@ -476,6 +479,19 @@ CodeEmitterNVC0::emitFMAD(const Instruction *i)
 }
 
 void
+CodeEmitterNVC0::emitDFMA(const Instruction *i)
+{
+   emitForm_A(i, HEX64(20000000, 00000001));
+   roundMode_A(i);
+
+   int neg1 = (i->src(0).mod ^ i->src(1).mod).neg();
+   int neg2 = i->src(2).mod.neg();
+
+   code[0] |= neg1 << 9;
+   code[0] |= neg2 << 8;
+}
+
+void
 CodeEmitterNVC0::emitFMUL(const Instruction *i)
 {
    bool neg = (i->src(0).mod ^ i->src(1).mod).neg();
@@ -507,6 +523,17 @@ CodeEmitterNVC0::emitFMUL(const Instruction *i)
       assert(!neg && !i->saturate && !i->ftz && !i->postFactor);
       emitForm_S(i, 0xa8, true);
    }
+}
+
+void
+CodeEmitterNVC0::emitDMUL(const Instruction *i)
+{
+   emitForm_A(i, HEX64(50000000, 00000001));
+   roundMode_A(i);
+
+   bool neg = (i->src(0).mod ^ i->src(1).mod).neg();
+   if (neg)
+      code[0] |= 1 << 9;
 }
 
 void
@@ -569,6 +596,14 @@ CodeEmitterNVC0::emitFADD(const Instruction *i)
       if (i->src(0).mod.neg())
          code[0] |= 1 << 7;
    }
+}
+
+void
+CodeEmitterNVC0::emitDADD(const Instruction *i)
+{
+   emitForm_A(i, HEX64(48000000, 00000001));
+   roundMode_A(i);
+   emitNegAbs12(i);
 }
 
 void
@@ -830,6 +865,9 @@ CodeEmitterNVC0::emitMINMAX(const Instruction *i)
 
    op = (i->op == OP_MIN) ? 0x080e000000000000ULL : 0x081e000000000000ULL;
 
+   if (i->dType == TYPE_F64)
+      op |= 0x1;
+   else
    if (i->ftz)
       op |= 1 << 5;
    else
@@ -2124,21 +2162,30 @@ CodeEmitterNVC0::emitInstruction(Instruction *insn)
       break;
    case OP_ADD:
    case OP_SUB:
-      if (isFloatType(insn->dType))
+      if (insn->dType == TYPE_F32)
          emitFADD(insn);
+      else
+      if (insn->dType == TYPE_F64)
+         emitDADD(insn);
       else
          emitUADD(insn);
       break;
    case OP_MUL:
-      if (isFloatType(insn->dType))
+      if (insn->dType == TYPE_F32)
          emitFMUL(insn);
+      else
+      if (insn->dType == TYPE_F64)
+         emitDMUL(insn);
       else
          emitUMUL(insn);
       break;
    case OP_MAD:
    case OP_FMA:
-      if (isFloatType(insn->dType))
+      if (insn->dType == TYPE_F32)
          emitFMAD(insn);
+      else
+      if (insn->dType == TYPE_F64)
+         emitDFMA(insn);
       else
          emitIMAD(insn);
       break;
