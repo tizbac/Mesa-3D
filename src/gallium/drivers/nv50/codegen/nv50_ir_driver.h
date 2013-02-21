@@ -187,6 +187,7 @@ struct nv50_ir_prog_info
       uint16_t texBindBase;      /* base address for TIC/TSC handles (nve4) */
       uint16_t suInfoBase;       /* base address for surface info (nve4) */
       uint8_t resInfoCBSlot;     /* cX[] used for tex/surface info */
+      boolean nv50SurfaceStyle;  /* generate gX[] access for raw buffers */
       uint8_t msInfoCBSlot;      /* cX[] used for multisample info */
       uint16_t msInfoBase;       /* base address for multisample info */
    } io;
