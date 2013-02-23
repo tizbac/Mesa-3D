@@ -50,6 +50,12 @@ struct nvc0_program {
       uint32_t tess_mode; /* ~0 if defined by the other stage */
       uint32_t input_patch_size;
    } tp;
+   struct {
+      uint32_t lmem_size; /* local memory (TGSI PRIVATE resource) size */
+      uint32_t smem_size; /* shared memory (TGSI LOCAL resource) size */
+      void *syms;
+      unsigned num_syms;
+   } cp;
 
    void *relocs;
 
