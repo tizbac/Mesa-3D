@@ -1871,7 +1871,6 @@ partitionLoadStore(uint8_t comp[2], uint8_t size[2], uint8_t mask)
       size[1] = 3 - size[0];
       comp[1] = comp[0] + size[0];
    }
-   assert(n);
    return n + 1;
 }
 
@@ -1931,7 +1930,7 @@ Converter::handleLOAD(Value *dst0[4])
                ld->setDef(c, ldv[c]);
          } else {
             mkTex(OP_SULDB, getResourceTarget(code, r), code->resources[r].slot,
-                  -1, ldv, src);
+                  -1, ldv, src)->dType = typeOfSize(size[i] * 4);
          }
       }
    } else {
@@ -1983,9 +1982,11 @@ Converter::handleSTORE()
          else
             src[0] = off[0];
 
+         const DataType stTy = typeOfSize(size[i] * 4);
+
          if (useSt) {
             Instruction *st =
-               mkStore(OP_STORE, TYPE_U32, base, NULL, fetchSrc(1, comp[c]));
+               mkStore(OP_STORE, stTy, base, NULL, fetchSrc(1, comp[c]));
             for (c = 1; c < size[i]; ++c)
                st->setSrc(1 + c, fetchSrc(1, comp[i] + c));
             st->setIndirect(0, 0, src[0]);
@@ -1995,7 +1996,7 @@ Converter::handleSTORE()
             for (c = 0; c < size[i]; ++c)
                src[s + c] = fetchSrc(1, comp[i] + c);
             mkTex(OP_SUSTB, getResourceTarget(code, r), code->resources[r].slot,
-                  -1, dummy, src);
+                  -1, dummy, src)->setType(stTy);
          }
       }
    } else {
