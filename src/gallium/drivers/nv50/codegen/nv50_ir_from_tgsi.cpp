@@ -1930,7 +1930,7 @@ Converter::handleLOAD(Value *dst0[4])
                ld->setDef(c, ldv[c]);
          } else {
             mkTex(OP_SULDB, getResourceTarget(code, r), code->resources[r].slot,
-                  -1, ldv, src)->dType = typeOfSize(size[i] * 4);
+                  0, ldv, src)->dType = typeOfSize(size[i] * 4);
          }
       }
    } else {
@@ -1942,7 +1942,7 @@ Converter::handleLOAD(Value *dst0[4])
             def[c] = dst0[c];
       }
 
-      mkTex(OP_SULDP, getResourceTarget(code, r), code->resources[r].slot, -1,
+      mkTex(OP_SULDP, getResourceTarget(code, r), code->resources[r].slot, 0,
             def, off);
    }
    FOR_EACH_DST_ENABLED_CHANNEL(0, c, tgsi)
@@ -1996,14 +1996,14 @@ Converter::handleSTORE()
             for (c = 0; c < size[i]; ++c)
                src[s + c] = fetchSrc(1, comp[i] + c);
             mkTex(OP_SUSTB, getResourceTarget(code, r), code->resources[r].slot,
-                  -1, dummy, src)->setType(stTy);
+                  0, dummy, src)->setType(stTy);
          }
       }
    } else {
       FOR_EACH_DST_ENABLED_CHANNEL(0, c, tgsi)
          src.push_back(fetchSrc(1, c));
 
-      mkTex(OP_SUSTP, getResourceTarget(code, r), code->resources[r].slot, -1,
+      mkTex(OP_SUSTP, getResourceTarget(code, r), code->resources[r].slot, 0,
             dummy, src)->tex.mask = tgsi.getDst(0).getMask();
    }
 }
@@ -2030,7 +2030,7 @@ Converter::handleATOM(Value *dst0[4], DataType ty, uint16_t subOp)
       TexTarget targ = getResourceTarget(code, r);
       int idx = code->resources[r].slot;
       defv.push_back(dst);
-      TexInstruction *tex = mkTex(OP_SUREDP, targ, idx, -1, defv, srcv);
+      TexInstruction *tex = mkTex(OP_SUREDP, targ, idx, 0, defv, srcv);
       tex->tex.mask = 1;
       tex->dType = ty;
    }
