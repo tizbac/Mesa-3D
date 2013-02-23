@@ -242,7 +242,7 @@ BuildUtil::mkCmp(operation op, CondCode cc, DataType ty, Value *dst,
 
 TexInstruction *
 BuildUtil::mkTex(operation op, TexTarget targ,
-                 uint8_t tic, uint8_t tsc,
+                 uint16_t tic, uint16_t tsc,
                  const std::vector<Value *> &def,
                  const std::vector<Value *> &src)
 {

@@ -531,7 +531,9 @@ void Instruction::print() const
       if (perPatch)
          PRINT("patch ");
       if (asTex())
-         PRINT("%s ", asTex()->tex.target.getName());
+         PRINT("%s $r%u $s%u ", asTex()->tex.target.getName(),
+               asTex()->tex.r,
+               asTex()->tex.s);
       if (postFactor)
          PRINT("x2^%i ", postFactor);
       PRINT("%s%s", dnz ? "dnz " : (ftz ? "ftz " : ""),  DataTypeStr[dType]);
