@@ -5,12 +5,6 @@
 #include "nv50/nv50_defs.xml.h"
 #include "nve4_compute.xml.h"
 
-static inline boolean
-nve4_pipe_surface_as_constbuf(struct pipe_surface *sf)
-{
-   return sf && sf->format == PIPE_FORMAT_NONE && !sf->writable;
-}
-
 /* Input space is implemented as c0[], to which we bind the screen->parm bo.
  */
 #define NVE4_CP_INPUT_USER        0x0000

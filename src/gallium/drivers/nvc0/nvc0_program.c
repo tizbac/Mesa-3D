@@ -25,6 +25,7 @@
 #include "nvc0_context.h"
 
 #include "nv50/codegen/nv50_ir_driver.h"
+#include "nve4_compute.h"
 
 /* If only they told use the actual semantic instead of just GENERIC ... */
 static void
@@ -569,11 +570,11 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset)
    if (prog->type == PIPE_SHADER_COMPUTE) {
       if (chipset >= NVISA_GK104_CHIPSET) {
          info->io.resInfoCBSlot = 0;
-         info->io.texBindBase = 0; /* TODO */
-         info->io.suInfoBase = 0; /* TODO */
+         info->io.texBindBase = NVE4_CP_INPUT_TEX(0);
+         info->io.suInfoBase = NVE4_CP_INPUT_SUF(0);
       }
       info->io.msInfoCBSlot = 0;
-      info->io.msInfoBase = 0; /* TODO */
+      info->io.msInfoBase = NVE4_CP_INPUT_MS_OFFSETS;
    } else {
       if (chipset >= NVISA_GK104_CHIPSET) {
          info->io.resInfoCBSlot = 15;
