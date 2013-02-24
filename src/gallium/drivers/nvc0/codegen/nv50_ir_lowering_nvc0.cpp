@@ -1262,8 +1262,15 @@ NVC0LoweringPass::handleRDSV(Instruction *i)
    Instruction *ld;
    uint32_t addr = targ->getSVAddress(FILE_SHADER_INPUT, sym);
 
-   if (addr >= 0x400) // mov $sreg
+   if (addr >= 0x400) {
+      // mov $sreg
+      if (sym->reg.data.sv.index > 2) {
+         // handle 4th component of TID,NTID,CTAID,NCTAID
+         i->op = OP_MOV;
+         i->setSrc(0, bld.mkImm(0));
+      }
       return true;
+   }
 
    switch (i->getSrc(0)->reg.data.sv.sv) {
    case SV_POSITION:
