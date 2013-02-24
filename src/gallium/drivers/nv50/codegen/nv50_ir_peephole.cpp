@@ -66,8 +66,9 @@ bool Instruction::isDead() const
 {
    if (op == OP_STORE ||
        op == OP_EXPORT ||
-       op == OP_WRSV ||
-       op == OP_ATOM)
+       op == OP_ATOM ||
+       op == OP_SUSTB || op == OP_SUSTP || op == OP_SUREDP ||
+       op == OP_WRSV)
       return false;
 
    for (int d = 0; defExists(d); ++d)
