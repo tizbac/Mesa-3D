@@ -142,12 +142,14 @@ nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    struct nv50_surface *sf;
    struct nv04_resource *res;
-   unsigned i, mask;
+   uint32_t mask;
+   unsigned i;
    const unsigned t = 1;
 
-   while (nvc0->surfaces_dirty[t]) {
-      i = ffs(nvc0->surfaces_dirty[t]) - 1;
-      nvc0->surfaces_dirty[t] &= ~(1 << i);
+   mask = nvc0->surfaces_dirty[t];
+   while (mask) {
+      i = ffs(mask) - 1;
+      mask &= ~(1 << i);
 
       sf = nv50_surface(nvc0->surfaces[t][i]);
       res = nv04_resource(sf->base.texture);
@@ -176,7 +178,7 @@ nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
    /* re-reference non-dirty surfaces */
    mask = nvc0->surfaces_valid[t] & ~nvc0->surfaces_dirty[t];
    while (mask) {
-      i = ffs(nvc0->surfaces_dirty[t]) - 1;
+      i = ffs(mask) - 1;
       mask &= ~(1 << i);
 
       sf = nv50_surface(nvc0->surfaces[t][i]);
