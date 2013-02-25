@@ -534,10 +534,11 @@ nvc0_program_dump(struct nvc0_program *prog)
 {
    unsigned pos;
 
-   for (pos = 0; pos < sizeof(prog->hdr) / sizeof(prog->hdr[0]); ++pos)
-      debug_printf("HDR[%02lx] = 0x%08x\n",
-                   pos * sizeof(prog->hdr[0]), prog->hdr[pos]);
-
+   if (prog->type != PIPE_SHADER_COMPUTE) {
+      for (pos = 0; pos < sizeof(prog->hdr) / sizeof(prog->hdr[0]); ++pos)
+         debug_printf("HDR[%02lx] = 0x%08x\n",
+                      pos * sizeof(prog->hdr[0]), prog->hdr[pos]);
+   }
    debug_printf("shader binary code (0x%x bytes):", prog->code_size);
    for (pos = 0; pos < prog->code_size / 4; ++pos) {
       if ((pos % 8) == 0)
