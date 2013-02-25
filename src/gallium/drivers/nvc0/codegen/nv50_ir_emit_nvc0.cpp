@@ -2000,22 +2000,22 @@ CodeEmitterNVC0::emitVectorSubOp(const Instruction *i)
 {
    switch (NV50_IR_SUBOP_Vn(i->subOp)) {
    case 0:
-      code[1] |= (i->subOp & 0x000f) << 12;
-      code[1] |= (i->subOp & 0x00e0) << 11;
-      code[1] |= (i->subOp & 0x0100) << 7;
+      code[1] |= (i->subOp & 0x000f) << 12; // vsrc1
+      code[1] |= (i->subOp & 0x00e0) >> 5;  // vsrc2
+      code[1] |= (i->subOp & 0x0100) << 7;  // vsrc2
       code[1] |= (i->subOp & 0x3c00) << 13; // vdst
       break;
    case 1:
-      code[1] |= (i->subOp & 0x000f) << 8;
-      code[1] |= (i->subOp & 0x0010) << 11;
-      code[1] |= (i->subOp & 0x01e0) >> 1;
-      code[1] |= (i->subOp & 0x0200) << 6;
-      code[1] |= (i->subOp & 0x3c00) << 2; // v4dst
+      code[1] |= (i->subOp & 0x000f) << 8;  // v2src1
+      code[1] |= (i->subOp & 0x0010) << 11; // v2src1
+      code[1] |= (i->subOp & 0x01e0) >> 1;  // v2src2
+      code[1] |= (i->subOp & 0x0200) << 6;  // v2src2
+      code[1] |= (i->subOp & 0x3c00) << 2;  // v4dst
       code[1] |= (i->mask & 0x3) << 2;
       break;
    case 2:
-      code[1] |= (i->subOp & 0x000f) << 8;
-      code[1] |= (i->subOp & 0x01e0) >> 1;
+      code[1] |= (i->subOp & 0x000f) << 8; // v4src1
+      code[1] |= (i->subOp & 0x01e0) >> 1; // v4src2
       code[1] |= (i->subOp & 0x3c00) << 2; // v4dst
       code[1] |= (i->mask & 0x3) << 2;
       code[1] |= (i->mask & 0xc) << 21;
