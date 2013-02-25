@@ -563,7 +563,7 @@ NVC0LegalizePostRA::visit(BasicBlock *bb)
       if (i->isNop()) {
          bb->remove(i);
       } else {
-         if (i->op != OP_MOV && i->op != OP_PFETCH)
+         if (i->op != OP_MOV && i->op != OP_PFETCH && i->op != OP_SUCLAMP)
             replaceZero(i);
          if (typeSizeof(i->dType) == 8)
             split64BitOp(i);
@@ -927,19 +927,19 @@ NVC0LoweringPass::loadMsInfo32(Value *ptr, uint32_t off)
 static inline uint16_t getSuClampSubOp(const TexInstruction *su, int c)
 {
    switch (su->tex.target.getEnum()) {
-   case TEX_TARGET_BUFFER:      return NV50_IR_SUBOP_SUCLAMP_PL(1, 1);
-   case TEX_TARGET_RECT:        return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_1D:          return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+   case TEX_TARGET_BUFFER:      return NV50_IR_SUBOP_SUCLAMP_PL(0, 1);
+   case TEX_TARGET_RECT:        return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
+   case TEX_TARGET_1D:          return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
    case TEX_TARGET_1D_ARRAY:    return (c == 1) ?
-                                   NV50_IR_SUBOP_SUCLAMP_PL(1, 2) :
-                                   NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_2D:          return NV50_IR_SUBOP_SUCLAMP_BL(1, 2);
-   case TEX_TARGET_2D_MS:       return NV50_IR_SUBOP_SUCLAMP_BL(1, 2);
-   case TEX_TARGET_2D_ARRAY:    return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_2D_MS_ARRAY: return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_3D:          return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_CUBE:        return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
-   case TEX_TARGET_CUBE_ARRAY:  return NV50_IR_SUBOP_SUCLAMP_SD(1, 2);
+                                   NV50_IR_SUBOP_SUCLAMP_PL(0, 2) :
+                                   NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
+   case TEX_TARGET_2D:          return NV50_IR_SUBOP_SUCLAMP_BL(0, 2);
+   case TEX_TARGET_2D_MS:       return NV50_IR_SUBOP_SUCLAMP_BL(0, 2);
+   case TEX_TARGET_2D_ARRAY:    return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
+   case TEX_TARGET_2D_MS_ARRAY: return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
+   case TEX_TARGET_3D:          return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
+   case TEX_TARGET_CUBE:        return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
+   case TEX_TARGET_CUBE_ARRAY:  return NV50_IR_SUBOP_SUCLAMP_SD(0, 2);
    default:
       assert(0);
       return 0;
