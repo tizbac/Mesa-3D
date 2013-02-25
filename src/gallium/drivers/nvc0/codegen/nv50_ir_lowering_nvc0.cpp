@@ -1043,17 +1043,17 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
    if (dim == 3) {
       v = loadResInfo32(NULL, base + NVE4_SU_INFO_UNK1C);
       bld.mkOp3(OP_MADSP, TYPE_U32, off, src[2], v, src[1])
-         ->subOp = NV50_IR_SUBOP_MADSP(4,2,4); // u16l u16l u16l
+         ->subOp = NV50_IR_SUBOP_MADSP(4,2,8); // u16l u16l u16l
 
       v = loadResInfo32(NULL, base + NVE4_SU_INFO_PITCH);
       bld.mkOp3(OP_MADSP, TYPE_U32, off, off, v, src[0])
-         ->subOp = NV50_IR_SUBOP_MADSP(0,2,4); // u32 u16l u16l
+         ->subOp = NV50_IR_SUBOP_MADSP(0,2,8); // u32 u16l u16l
    } else {
       assert(dim == 2);
       v = loadResInfo32(NULL, base + NVE4_SU_INFO_PITCH);
       bld.mkOp3(OP_MADSP, TYPE_U32, off, src[1], v, src[0])
          ->subOp = su->tex.target.isArray() ?
-         NV50_IR_SUBOP_MADSP_SD : NV50_IR_SUBOP_MADSP(4,2,4); // u16l u16l u16l
+         NV50_IR_SUBOP_MADSP_SD : NV50_IR_SUBOP_MADSP(4,2,8); // u16l u16l u16l
    }
 
    // calculate effective address part 1
