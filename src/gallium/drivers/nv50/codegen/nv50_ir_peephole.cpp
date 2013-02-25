@@ -1232,8 +1232,8 @@ AlgebraicOpt::handleSUCLAMP(Instruction *insn)
       return;
    add = insn->getSrc(0)->getInsn();
    if (!add || add->op != OP_ADD ||
-       add->dType != TYPE_U32 ||
-       add->dType != TYPE_S32)
+       (add->dType != TYPE_U32 &&
+        add->dType != TYPE_S32))
       return;
 
    // look for immediate
@@ -1251,6 +1251,7 @@ AlgebraicOpt::handleSUCLAMP(Instruction *insn)
    if (add->src(s).getFile() != FILE_GPR || add->src(s).mod != Modifier(0))
       return;
 
+   bld.setPosition(insn, false); // make sure bld is init'ed
    // replace sources
    insn->setSrc(2, bld.mkImm(val));
    insn->setSrc(0, add->getSrc(s));
