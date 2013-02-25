@@ -46,7 +46,7 @@ public:
 private:
    Program::Type progType;
 
-   const TargetNV50 *targ;
+   const TargetNV50 *targNV50;
 
 private:
    inline void defId(const ValueDef&, const int pos);
@@ -1515,7 +1515,7 @@ CodeEmitterNV50::emitFlow(const Instruction *i, uint8_t flowOp)
 
       if (f->op == OP_CALL) {
          if (f->builtin) {
-            pos = targ->getBuiltinOffset(f->target.builtin);
+            pos = targNV50->getBuiltinOffset(f->target.builtin);
          } else {
             pos = f->target.fn->binPos;
          }
@@ -1942,7 +1942,8 @@ CodeEmitterNV50::prepareEmission(Function *func)
    replaceExitWithModifier(func);
 }
 
-CodeEmitterNV50::CodeEmitterNV50(const TargetNV50 *target) : CodeEmitter(target)
+CodeEmitterNV50::CodeEmitterNV50(const TargetNV50 *target) :
+   CodeEmitter(target), targNV50(target)
 {
    targ = target; // specialized
    code = NULL;
