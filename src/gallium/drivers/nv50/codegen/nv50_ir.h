@@ -828,6 +828,7 @@ public:
       }
 
       inline bool operator==(TexTarget targ) const { return target == targ; }
+      inline bool operator!=(TexTarget targ) const { return target != targ; }
 
       enum TexTarget getEnum() const { return target; }
 

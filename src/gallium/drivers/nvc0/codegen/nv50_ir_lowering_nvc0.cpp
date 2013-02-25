@@ -1038,7 +1038,8 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
 
    // calculate pixel offset
    if (dim == 1) {
-      bld.mkOp2(OP_AND, TYPE_U32, off, src[0], bld.loadImm(NULL, 0xffff));
+      if (su->tex.target != TEX_TARGET_BUFFER)
+         bld.mkOp2(OP_AND, TYPE_U32, off, src[0], bld.loadImm(NULL, 0xffff));
    } else
    if (dim == 3) {
       v = loadResInfo32(NULL, base + NVE4_SU_INFO_UNK1C);
