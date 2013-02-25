@@ -532,9 +532,11 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
    uint32_t *const info = push->cur;
    uint8_t log2cpp;
 
+   assert(nve4_su_format_map[psf->format]);
+
    push->cur += 16;
 
-   if (!psf) {
+   if (!psf || !nve4_su_format_map[psf->format]) {
       memset(info, 0, 16 * sizeof(*info));
 
       info[1] = 0x80004000;
