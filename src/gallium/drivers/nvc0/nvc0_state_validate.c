@@ -438,8 +438,8 @@ nvc0_validate_global_memory_maps(struct nvc0_context *nvc0,
 
    for (i = 0; i < nvc0->global_maps.size / sizeof(struct pipe_resource *);
         ++i) {
-      struct pipe_resource *res =
-         *util_dynarray_element(&nvc0->global_maps, struct pipe_resource *, i);
+      struct nv04_resource *res = nv04_resource(
+         *util_dynarray_element(&nvc0->global_maps, struct pipe_resource *, i));
       if (res)
          nvc0_add_resident(bctx, bin, res, NOUVEAU_BO_RDWR);
    }

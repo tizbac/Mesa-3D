@@ -293,20 +293,24 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->text);
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->uniform_bo);
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->txc);
-   BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->text);
-   BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->parm);
-   BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->txc);
+   if (screen->compute) {
+      BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->text);
+      BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->txc);
+      BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->parm);
+   }
 
    flags = NOUVEAU_BO_VRAM | NOUVEAU_BO_RDWR;
 
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->poly_cache);
-   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->tls);
+   if (screen->compute)
+      BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->tls);
 
    flags = NOUVEAU_BO_GART | NOUVEAU_BO_WR;
 
    BCTX_REFN_bo(nvc0->bufctx_3d, SCREEN, flags, screen->fence.bo);
-   BCTX_REFN_bo(nvc0->bufctx_cp, SCREEN, flags, screen->fence.bo);
    BCTX_REFN_bo(nvc0->bufctx, FENCE, flags, screen->fence.bo);
+   if (screen->compute)
+      BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->fence.bo);
 
    nvc0->base.scratch.bo_size = 2 << 20;
 

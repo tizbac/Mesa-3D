@@ -799,7 +799,7 @@ nvc0_set_constant_buffer(struct pipe_context *pipe, uint shader, uint index,
       if (nvc0->constbuf[s][i].u.buf)
          nouveau_bufctx_reset(nvc0->bufctx_cp, NVC0_BIND_CP_CB(i));
 
-      nvc0->dirty_cp = NVC0_NEW_CP_CONSTBUF;
+      nvc0->dirty_cp |= NVC0_NEW_CP_CONSTBUF;
    } else {
       if (nvc0->constbuf[s][i].user)
          nvc0->constbuf[s][i].u.buf = NULL;
@@ -807,7 +807,7 @@ nvc0_set_constant_buffer(struct pipe_context *pipe, uint shader, uint index,
       if (nvc0->constbuf[s][i].u.buf)
          nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_CB(s, i));
 
-      nvc0->dirty = NVC0_NEW_CONSTBUF;
+      nvc0->dirty |= NVC0_NEW_CONSTBUF;
    }
    nvc0->constbuf_dirty[s] |= 1 << i;
 

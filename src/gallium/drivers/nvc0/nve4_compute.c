@@ -80,11 +80,15 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    PUSH_DATA (push, magic[0]);
    PUSH_DATA (push, 0xff);
 
-   /* Unified address space ? Who needs that ? Certainly not OpenCL. */
+   /* Unified address space ? Who needs that ? Certainly not OpenCL.
+    *
+    * FATAL: Buffers with addresses inside [0x1000000, 0x3000000] will NOT be
+    *  accessible. We cannot prevent that at the moment, so expect failure.
+    */
    BEGIN_NVC0(push, NVE4_COMPUTE(LOCAL_BASE), 1);
-   PUSH_DATA (push, 0x20000);
+   PUSH_DATA (push, 1 << 24);
    BEGIN_NVC0(push, NVE4_COMPUTE(SHARED_BASE), 1);
-   PUSH_DATA (push, 0xa0000);
+   PUSH_DATA (push, 2 << 24);
 
    BEGIN_NVC0(push, SUBC_COMPUTE(0x0310), 1);
    PUSH_DATA (push, magic[1]);
