@@ -1060,7 +1060,7 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
    if (su->tex.target == TEX_TARGET_BUFFER) {
       v = loadResInfo32(NULL, base + NVE4_SU_INFO_FMT);
       bld.mkOp3(OP_VSHL, TYPE_U32, bf, src[0], v, zero)
-         ->subOp = NV50_IR_SUBOP_V1(0,0,8|2);
+         ->subOp = NV50_IR_SUBOP_V1(7,6,8|2);
    } else {
       Value *y = src[1];
       Value *z = src[2];
