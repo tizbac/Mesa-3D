@@ -285,6 +285,8 @@ TargetNVC0::insnCanLoad(const Instruction *i, int s,
 
    for (int k = 0; i->srcExists(k); ++k) {
       if (i->src(k).getFile() == FILE_IMMEDIATE) {
+         if (k == 2 && i->op == OP_SUCLAMP) // special case
+            continue;
          if (i->getSrc(k)->reg.data.u64 != 0)
             return false;
       } else
