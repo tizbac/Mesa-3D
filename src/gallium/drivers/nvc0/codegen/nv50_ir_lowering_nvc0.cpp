@@ -1177,7 +1177,8 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
          bld.mkMov(su->getDef(0), r[i]);
       }
       delete_Instruction(bld.getProgram(), su);
-   } else
+   }
+
    if (su->op == OP_SUREDP) {
       Value *pred = su->getSrc(2);
       CondCode cc = CC_NOT_P;
@@ -1199,6 +1200,8 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
       red->setSrc(0, gMemBase);
       red->setIndirect(0, 0, su->getSrc(0));
       delete_Instruction(bld.getProgram(), su);
+   } else {
+      su->sType = TYPE_U8;
    }
 }
 
