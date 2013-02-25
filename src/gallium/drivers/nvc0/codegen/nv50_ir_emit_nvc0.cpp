@@ -1883,8 +1883,11 @@ CodeEmitterNVC0::emitSUCalc(Instruction *i)
    }
    emitForm_A(i, opc);
 
-   if (i->op == OP_SUCLAMP)
+   if (i->op == OP_SUCLAMP) {
+      if (i->dType == TYPE_S32)
+         code[0] |= 1 << 9;
       emitSUCLAMPMode(i->subOp);
+   }
 
    if (i->op == OP_SUBFM && i->subOp == NV50_IR_SUBOP_SUBFM_3D)
          code[1] |= 1 << 16;
