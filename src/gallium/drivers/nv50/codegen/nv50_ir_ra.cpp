@@ -1833,12 +1833,14 @@ RegAlloc::InsertConstraintsPass::condenseSrcs(Instruction *insn,
 void
 RegAlloc::InsertConstraintsPass::texConstraintNVE0(TexInstruction *tex)
 {
-   textureMask(tex);
+   if (isTextureOp(tex->op))
+      textureMask(tex);
    condenseDefs(tex);
 
    if (tex->op == OP_SUSTB || tex->op == OP_SUSTP) {
       condenseSrcs(tex, 3, (3 + typeSizeof(tex->dType) / 4) - 1);
-   } else {
+   } else
+   if (isTextureOp(tex->op)) {
       int n = tex->srcCount(0xff, true);
       if (n > 4) {
          condenseSrcs(tex, 0, 3);
