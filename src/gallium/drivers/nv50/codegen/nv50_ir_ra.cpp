@@ -658,6 +658,8 @@ private:
          return static_cast<RIG_Node *>(ei.getNode());
       }
 
+      void printPrefList() const;
+
    public:
       uint32_t degree;
       uint16_t degreeLimit; // if deg < degLimit, node is trivially colourable
@@ -681,6 +683,8 @@ private:
 
 private:
    inline RIG_Node *getNode(const LValue *v) const { return &nodes[v->id]; }
+
+   void regPreferenceFromMOV(const Instruction *mov);
 
    void buildRIG(ArrayList&);
    bool coalesce(ArrayList&);
@@ -733,6 +737,17 @@ uint8_t GCRA::relDegree[17][17];
 GCRA::RIG_Node::RIG_Node() : Node(NULL), next(this), prev(this)
 {
    colors = 0;
+}
+
+void GCRA::RIG_Node::printPrefList() const
+{
+   INFO("regPrefs of %%%i:", this->getValue()->id);
+   for (std::list<RIG_Node *>::const_iterator it = prefRegs.begin();
+        it != prefRegs.end(); ++it) {
+      RIG_Node *p = *it;
+      INFO(" %%%i(rep=%%%i)[%i]", p->getValue()->id, p->getValue()->rep()->id, p->reg);
+   }
+   INFO("\n");
 }
 
 void
@@ -920,6 +935,18 @@ GCRA::makeCompound(Instruction *insn, bool split)
    assert(base == size);
 }
 
+void
+GCRA::regPreferenceFromMOV(const Instruction *mov)
+{
+   assert(mov->op == OP_MOV);
+
+   RIG_Node *a = getNode(mov->getDef(0)->asLValue());
+   RIG_Node *b = getNode(mov->getSrc(0)->asLValue());
+
+   a->prefRegs.push_back(b);
+   b->prefRegs.push_back(a);
+}
+
 bool
 GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
 {
@@ -963,16 +990,23 @@ GCRA::doCoalesce(ArrayList& insns, unsigned int mask)
       case OP_MOV:
          if (!(mask & JOIN_MASK_MOV))
             break;
+#if 0
          i = NULL;
          if (!insn->getDef(0)->uses.empty())
             i = insn->getDef(0)->uses.front()->getInsn();
          // if this is a contraint-move there will only be a single use
          if (i && i->op == OP_MERGE) // do we really still need this ?
             break;
+#endif
          i = insn->getSrc(0)->getUniqueInsn();
          if (i && !i->constrainedDefs()) {
             if (coalesceValues(insn->getDef(0), insn->getSrc(0), false))
                copyCompound(insn->getSrc(0), insn->getDef(0));
+            else
+               regPreferenceFromMOV(insn);
+         } else
+         if (i) {
+            regPreferenceFromMOV(insn);
          }
          break;
       case OP_TEX:
@@ -1229,6 +1263,55 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
             INFO_DBG(prog->dbgFlags, REG_ALLOC, "(%%%i) X (%%%i): no overlap\n",
                      vD->id, vd->id);
             continue;
+         } else {
+#if 1
+            Instruction *mov;
+            const LValue *vC;
+
+            mov = vD->getInsn();
+            if (mov->op == OP_MOV) {
+               if (mov->getSrc(0) == vd) {
+                  INFO_DBG(prog->dbgFlags, REG_ALLOC, "(%%%i) X (%%%i): mov\n",
+                           vD->id, vd->id);
+                  continue;
+               }
+            }
+
+            mov = vd->getInsn();
+            if (mov->op == OP_MOV) {
+               if (mov->getSrc(0) == vD) {
+                  INFO_DBG(prog->dbgFlags, REG_ALLOC, "(%%%i) X (%%%i): mov\n",
+                           vD->id, vd->id);
+                  continue;
+               }
+            }
+
+            bool cont = false;
+            vC = (vD->compMask == 0xff) ? vD : (vd->compMask == 0xff ? vd : NULL);
+            if (vC &&
+                vC->getInsn()->op == OP_MERGE) {
+               const Instruction *merge = vC->getInsn();
+               const LValue *vc = (vC == vD) ? vd : vD;
+               for (int c = 0; merge->srcExists(c); ++c) {
+                  const LValue *vM = merge->getSrc(c)->asLValue();
+                  mov = vM->getInsn();
+                  if (mov->op != OP_MOV)
+                     continue;
+                  if (mov->getSrc(c) == vc) {
+                     if (vc->compound)
+                        cont = vc->compMask == vM->compMask;
+                     else
+                        cont = true;
+                     break;
+                  }
+               }
+            }
+            if (cont)
+               continue;
+
+            // INFO("livei[%%%i]: ", vD->id); vD->livei.print();
+            // INFO("livei[%%%i]: ", vd->id); vd->livei.print();
+#endif
          }
 
          uint8_t mask = vD->compound ? vD->compMask : ~0;
@@ -1278,12 +1361,22 @@ GCRA::selectRegisters()
          checkInterference(node, ei);
 
       if (!node->prefRegs.empty()) {
+         if (prog->dbgFlags & NV50_IR_DEBUG_REG_ALLOC)
+            node->printPrefList();
          for (std::list<RIG_Node *>::const_iterator it = node->prefRegs.begin();
               it != node->prefRegs.end();
               ++it) {
-            if ((*it)->reg >= 0 &&
-                regs.testOccupy(node->f, (*it)->reg, node->colors)) {
-               node->reg = (*it)->reg;
+            RIG_Node *p = getNode((*it)->getValue()->rep()->asLValue());
+            int32_t reg = p->reg;
+            if (reg < 0)
+               continue;
+            if (p->colors > node->colors)
+               reg += ffs((*it)->getValue()->compMask) - 1; // get subreg
+            else
+               reg -= ffs(p->getValue()->compMask) - 1; // get compound base reg
+            if (reg >= 0 && regs.testOccupy(node->f, reg, node->colors)) {
+               INFO("preffy: %i\n", reg);
+               node->reg = reg;
                break;
             }
          }
