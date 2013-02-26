@@ -528,11 +528,11 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
                       struct nvc0_screen *screen)
 {
    struct nv50_surface *sf = nv50_surface(psf);
-   struct nv04_resource *res = nv04_resource(sf->base.texture);
+   struct nv04_resource *res;
    uint32_t *const info = push->cur;
    uint8_t log2cpp;
 
-   assert(nve4_su_format_map[psf->format]);
+   assert(!psf || nve4_su_format_map[psf->format]);
 
    push->cur += 16;
 
@@ -544,6 +544,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
          screen->lib_code->start;
       return;
    }
+   res = nv04_resource(sf->base.texture);
 
    info[8] = sf->width;
    info[9] = sf->height;

@@ -155,9 +155,6 @@ nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
       i = ffs(mask) - 1;
       mask &= ~(1 << i);
 
-      sf = nv50_surface(nvc0->surfaces[t][i]);
-      res = nv04_resource(sf->base.texture);
-
       /*
        * NVE4's surface load/store instructions receive all the information
        * directly instead of via binding points, so we have to supply them.
@@ -173,10 +170,15 @@ nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
 
       nve4_set_surface_info(push, nvc0->surfaces[t][i], screen);
 
-      if (sf->base.writable)
-         BCTX_REFN(nvc0->bufctx_cp, CP_SUF, res, RDWR);
-      else
-         BCTX_REFN(nvc0->bufctx_cp, CP_SUF, res, RD);
+      sf = nv50_surface(nvc0->surfaces[t][i]);
+      if (sf) {
+         res = nv04_resource(sf->base.texture);
+
+         if (sf->base.writable)
+            BCTX_REFN(nvc0->bufctx_cp, CP_SUF, res, RDWR);
+         else
+            BCTX_REFN(nvc0->bufctx_cp, CP_SUF, res, RD);
+      }
    }
 
    /* re-reference non-dirty surfaces */
@@ -239,7 +241,7 @@ nve4_compute_set_tex_handles(struct nvc0_context *nvc0)
    BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_SIZE), 2);
    PUSH_DATA (push, n * 4);
    PUSH_DATA (push, 0x1);
-   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 1 + n);
+   BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 1 + n);
    PUSH_DATA (push, 0x41);
    PUSH_DATAp(push, &nvc0->tex_handles[s][i], n);
 
