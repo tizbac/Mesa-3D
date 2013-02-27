@@ -139,6 +139,7 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    return 0;
 }
 
+
 static void
 nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
 {
@@ -271,7 +272,6 @@ nve4_compute_validate_program(struct nvc0_context *nvc0)
 }
 
 
-
 static boolean
 nve4_compute_state_validate(struct nvc0_context *nvc0)
 {
@@ -371,6 +371,21 @@ nve4_compute_setup_launch_desc(struct nvc0_context *nvc0,
    nve4_cp_launch_desc_set_cb(desc, 0, screen->parm, 0, NVE4_CP_INPUT_SIZE_MAX);
 }
 
+static INLINE struct nve4_cp_launch_desc *
+nve4_compute_alloc_launch_desc(struct nouveau_context *nv,
+                               struct nouveau_bo **pbo, uint64_t *pgpuaddr)
+{
+   uint8_t *ptr = nouveau_scratch_get(nv, 512, pgpuaddr, pbo);
+   if (!ptr)
+      return NULL;
+   if (*pgpuaddr & 255) {
+      unsigned adj = 256 - (*pgpuaddr & 255);
+      ptr += adj;
+      *pgpuaddr += adj;
+   }
+   return (struct nve4_cp_launch_desc *)ptr;
+}
+
 void
 nve4_launch_grid(struct pipe_context *pipe,
                  const uint *block_layout, const uint *grid_layout,
@@ -380,32 +395,26 @@ nve4_launch_grid(struct pipe_context *pipe,
    struct nvc0_context *nvc0 = nvc0_context(pipe);
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    struct nve4_cp_launch_desc *desc;
+   uint64_t desc_gpuaddr;
    struct nouveau_bo *desc_bo;
-   uint8_t *desc_ptr;
-   uint64_t desc_gpu;
    int ret;
 
    ret = !nve4_compute_state_validate(nvc0);
    if (ret)
       goto out;
 
-   desc_ptr = nouveau_scratch_get(&nvc0->base, 512, &desc_gpu, &desc_bo);
-   if (desc_gpu & 255) {
-      unsigned adj = 256 - (desc_gpu & 255);
-      desc_gpu += adj;
-      desc_ptr += adj;
-   }
-   desc = (struct nve4_cp_launch_desc *)desc_ptr;
-
+   desc = nve4_compute_alloc_launch_desc(&nvc0->base, &desc_bo, &desc_gpuaddr);
+   if (!desc)
+      goto out;
    BCTX_REFN_bo(nvc0->bufctx_cp, CP_DESC, NOUVEAU_BO_GART | NOUVEAU_BO_RD,
                 desc_bo);
-
    nve4_compute_setup_launch_desc(nvc0, desc, label, block_layout, grid_layout);
    nve4_compute_dump_launch_desc(desc);
+
    nve4_compute_upload_input(nvc0, input);
 
    BEGIN_NVC0(push, NVE4_COMPUTE(LAUNCH_DESC_ADDRESS), 1);
-   PUSH_DATA (push, desc_gpu >> 8);
+   PUSH_DATA (push, desc_gpuaddr >> 8);
    BEGIN_NVC0(push, NVE4_COMPUTE(LAUNCH), 1);
    PUSH_DATA (push, 0x3);
    BEGIN_NVC0(push, SUBC_COMPUTE(NV50_GRAPH_SERIALIZE), 1);
