@@ -1164,6 +1164,7 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
 
       call = bld.mkFlow(OP_CALL, NULL, su->cc, su->getPredicate());
 
+      call->builtin = 1;
       call->indirect = 1;
       call->absolute = 1;
       call->setSrc(0, bld.mkSymbol(FILE_MEMORY_CONST,
