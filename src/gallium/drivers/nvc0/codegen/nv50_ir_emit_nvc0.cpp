@@ -1267,6 +1267,9 @@ CodeEmitterNVC0::emitFlow(const Instruction *i)
    }
 
    if (f->op == OP_CALL) {
+      if (f->indirect) {
+         // nothing
+      } else
       if (f->builtin) {
          assert(f->absolute);
          uint32_t pcAbs = targNVC0->getBuiltinOffset(f->target.builtin);
