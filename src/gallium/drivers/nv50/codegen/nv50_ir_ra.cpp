@@ -1297,7 +1297,7 @@ GCRA::checkInterference(const RIG_Node *node, Graph::EdgeIterator& ei)
                   mov = vM->getInsn();
                   if (mov->op != OP_MOV)
                      continue;
-                  if (mov->getSrc(c) == vc) {
+                  if (mov->getSrc(0) == vc) {
                      if (vc->compound)
                         cont = vc->compMask == vM->compMask;
                      else
