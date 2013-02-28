@@ -1834,6 +1834,8 @@ CodeEmitterNVC0::emitMEMBAR(const Instruction *i)
       break;
    }
    code[1] = 0xe0000000;
+
+   emitPredicate(i);
 }
 
 void
