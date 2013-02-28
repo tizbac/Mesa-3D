@@ -58,7 +58,6 @@ Instruction::isNop() const
       return true;
    }
 
-   assert(op != OP_BAR && op != OP_MEMBAR);
    return false;
 }
 
