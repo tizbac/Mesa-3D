@@ -517,16 +517,16 @@ void Instruction::print() const
       PRINT("%s ", operationStr[op]);
       if (op == OP_LINTERP || op == OP_PINTERP)
          PRINT("%s ", interpStr[ipa]);
-      if (subOp) {
-         switch (op) {
-         case OP_ATOM:
-            if (subOp < Elements(atomSubOpStr))
-               PRINT("%s ", atomSubOpStr[subOp]);
-            break;
-         default:
+      switch (op) {
+      case OP_SUREDP:
+      case OP_ATOM:
+         if (subOp < Elements(atomSubOpStr))
+            PRINT("%s ", atomSubOpStr[subOp]);
+         break;
+      default:
+         if (subOp)
             PRINT("(SUBOP:%u) ", subOp);
-            break;
-         }
+         break;
       }
       if (perPatch)
          PRINT("patch ");
