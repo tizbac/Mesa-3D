@@ -895,10 +895,20 @@ static inline uint8_t makeCompMask(int compSize, int base, int size)
    }
 }
 
+// Used when coalescing MOVs. It is possible that we copy a compound value
+// (i.e. created by MERGE) to a non-compound one (like a native f64 value),
 static inline void copyCompound(Value *dst, Value *src)
 {
    LValue *ldst = dst->asLValue();
    LValue *lsrc = src->asLValue();
+
+   // TODO: When do we copy a non-compound to a compound value ?
+   // Compound values usually come from a MERGE, not a MOV.
+   if (ldst->compound && !lsrc->compound) {
+      LValue *swap = lsrc;
+      lsrc = ldst;
+      ldst = swap;
+   }
 
    ldst->compound = lsrc->compound;
    ldst->compMask = lsrc->compMask;
