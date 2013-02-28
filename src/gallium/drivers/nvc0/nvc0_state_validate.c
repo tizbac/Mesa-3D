@@ -431,17 +431,17 @@ nvc0_validate_sample_mask(struct nvc0_context *nvc0)
 }
 
 void
-nvc0_validate_global_memory_maps(struct nvc0_context *nvc0,
-                                 struct nouveau_bufctx *bctx, int bin)
+nvc0_validate_global_residents(struct nvc0_context *nvc0,
+                               struct nouveau_bufctx *bctx, int bin)
 {
    unsigned i;
 
-   for (i = 0; i < nvc0->global_maps.size / sizeof(struct pipe_resource *);
+   for (i = 0; i < nvc0->global_residents.size / sizeof(struct pipe_resource *);
         ++i) {
-      struct nv04_resource *res = nv04_resource(
-         *util_dynarray_element(&nvc0->global_maps, struct pipe_resource *, i));
+      struct pipe_resource *res = *util_dynarray_element(
+         &nvc0->global_residents, struct pipe_resource *, i);
       if (res)
-         nvc0_add_resident(bctx, bin, res, NOUVEAU_BO_RDWR);
+         nvc0_add_resident(bctx, bin, nv04_resource(res), NOUVEAU_BO_RDWR);
    }
 }
 

@@ -1143,22 +1143,25 @@ nvc0_set_global_bindings(struct pipe_context *pipe,
    struct pipe_resource **ptr;
    unsigned i;
    const unsigned end = start + nr;
-   const unsigned refsize = sizeof(struct pipe_resource *);
+
+   if (nvc0->global_residents.size <= (end * sizeof(struct pipe_resource *))) {
+      const unsigned old_size = nvc0->global_residents.size;
+      const unsigned req_size = end * sizeof(struct pipe_resource *);
+      util_dynarray_resize(&nvc0->global_residents, req_size);
+      memset((uint8_t *)nvc0->global_residents.data + old_size, 0,
+             req_size - old_size);
+   }
 
    if (resources) {
-      if (nvc0->global_maps.size < (end * refsize))
-         util_dynarray_resize(&nvc0->global_maps, end * refsize);
-      ptr = (struct pipe_resource **)util_dynarray_begin(&nvc0->global_maps);
-      ptr += start;
+      ptr = util_dynarray_element(
+         &nvc0->global_residents, struct pipe_resource *, start);
       for (i = 0; i < nr; ++i) {
          pipe_resource_reference(&ptr[i], resources[i]);
          nvc0_set_global_handle(handles[i], resources[i]);
       }
    } else {
-      if (nvc0->global_maps.size <= (end * refsize))
-         util_dynarray_resize(&nvc0->global_maps, start * refsize);
-      ptr = (struct pipe_resource **)util_dynarray_begin(&nvc0->global_maps);
-      ptr += start;
+      ptr = util_dynarray_element(
+         &nvc0->global_residents, struct pipe_resource *, start);
       for (i = 0; i < nr; ++i)
          pipe_resource_reference(&ptr[i], NULL);
    }

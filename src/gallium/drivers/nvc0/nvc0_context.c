@@ -89,13 +89,13 @@ nvc0_context_unreference_resources(struct nvc0_context *nvc0)
    for (i = 0; i < nvc0->num_tfbbufs; ++i)
       pipe_so_target_reference(&nvc0->tfbbuf[i], NULL);
 
-   for (i = 0; i < nvc0->global_maps.size / sizeof(struct pipe_resource *);
+   for (i = 0; i < nvc0->global_residents.size / sizeof(struct pipe_resource *);
         ++i) {
-      struct pipe_resource **res =
-         util_dynarray_element(&nvc0->global_maps, struct pipe_resource *, i);
+      struct pipe_resource **res = util_dynarray_element(
+         &nvc0->global_residents, struct pipe_resource *, i);
       pipe_resource_reference(res, NULL);
    }
-   util_dynarray_fini(&nvc0->global_maps);
+   util_dynarray_fini(&nvc0->global_residents);
 }
 
 static void
@@ -316,7 +316,7 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
 
    memset(nvc0->tex_handles, ~0, sizeof(nvc0->tex_handles));
 
-   util_dynarray_init(&nvc0->global_maps);
+   util_dynarray_init(&nvc0->global_residents);
 
    return pipe;
 

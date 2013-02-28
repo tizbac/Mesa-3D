@@ -196,7 +196,7 @@ struct nvc0_context {
    uint16_t surfaces_dirty[2];
    uint16_t surfaces_valid[2];
 
-   struct util_dynarray global_maps;
+   struct util_dynarray global_residents;
 
 #ifdef NVC0_WITH_DRAW_MODULE
    struct draw_context *draw;
@@ -267,8 +267,8 @@ void nvc0_tfb_validate(struct nvc0_context *);
 extern void nvc0_init_state_functions(struct nvc0_context *);
 
 /* nvc0_state_validate.c */
-void nvc0_validate_global_memory_maps(struct nvc0_context *,
-                                      struct nouveau_bufctx *, int bin);
+void nvc0_validate_global_residents(struct nvc0_context *,
+                                    struct nouveau_bufctx *, int bin);
 extern boolean nvc0_state_validate(struct nvc0_context *, uint32_t state_mask,
                                    unsigned space_words);
 
