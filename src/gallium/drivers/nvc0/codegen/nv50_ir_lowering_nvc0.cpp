@@ -478,6 +478,8 @@ void
 NVC0LegalizePostRA::replaceZero(Instruction *i)
 {
    for (int s = 0; i->srcExists(s); ++s) {
+      if (s == 2 && i->op == OP_SUCLAMP)
+         continue;
       ImmediateValue *imm = i->getSrc(s)->asImm();
       if (imm && imm->reg.data.u64 == 0)
          i->setSrc(s, rZero);
@@ -563,7 +565,7 @@ NVC0LegalizePostRA::visit(BasicBlock *bb)
       if (i->isNop()) {
          bb->remove(i);
       } else {
-         if (i->op != OP_MOV && i->op != OP_PFETCH && i->op != OP_SUCLAMP)
+         if (i->op != OP_MOV && i->op != OP_PFETCH)
             replaceZero(i);
          if (typeSizeof(i->dType) == 8)
             split64BitOp(i);
