@@ -1166,20 +1166,20 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
 
       call = bld.mkFlow(OP_CALL, NULL, su->cc, su->getPredicate());
 
-      call->builtin = 1;
       call->indirect = 1;
       call->absolute = 1;
       call->setSrc(0, bld.mkSymbol(FILE_MEMORY_CONST,
                                    prog->driver->io.resInfoCBSlot, TYPE_U32,
                                    prog->driver->io.suInfoBase + base));
-      for (int i = 0; i < 5; ++i)
-         call->setSrc(1 + i, r[i]);
+      call->setSrc(1, r[2]);
+      call->setSrc(2, r[4]);
       for (int i = 0; i < 3; ++i)
-         call->setSrc(6 + i, p[i]);
+         call->setSrc(3 + i, p[i]);
       for (int i = 0; i < 4; ++i) {
          call->setDef(i, r[i]);
-         bld.mkMov(su->getDef(0), r[i]);
+         bld.mkMov(su->getDef(i), r[i]);
       }
+      call->setDef(4, p[1]);
       delete_Instruction(bld.getProgram(), su);
    }
 
