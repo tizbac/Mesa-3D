@@ -532,7 +532,8 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
    uint32_t *const info = push->cur;
    uint8_t log2cpp;
 
-   assert(!psf || nve4_su_format_map[psf->format]);
+   if (psf && !nve4_su_format_map[psf->format])
+      NOUVEAU_ERR("st forgot to check is_format_supported !");
 
    push->cur += 16;
 
