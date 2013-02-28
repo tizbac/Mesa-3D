@@ -2001,7 +2001,7 @@ Converter::handleSTORE()
 
          if (useSt) {
             Instruction *st =
-               mkStore(OP_STORE, stTy, base, NULL, fetchSrc(1, comp[c]));
+               mkStore(OP_STORE, stTy, base, NULL, fetchSrc(1, comp[i]));
             for (c = 1; c < size[i]; ++c)
                st->setSrc(1 + c, fetchSrc(1, comp[i] + c));
             st->setIndirect(0, 0, src[0]);
