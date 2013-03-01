@@ -610,9 +610,6 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset)
    prog->relocs = info->bin.relocData;
    prog->max_gpr = MAX2(4, (info->bin.maxGPR + 1));
 
-   prog->code[0] = 0x00001de7;
-   prog->code[1] = 0x80000000;
-
    prog->vp.need_vertex_id = info->io.vertexId < PIPE_MAX_SHADER_INPUTS;
 
    if (info->io.edgeFlagOut < PIPE_MAX_ATTRIBS)

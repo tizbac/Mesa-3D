@@ -529,6 +529,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
 {
    struct nv50_surface *sf = nv50_surface(psf);
    struct nv04_resource *res;
+   uint64_t address;
    uint32_t *const info = push->cur;
    uint8_t log2cpp;
 
@@ -540,12 +541,15 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
    if (!psf || !nve4_su_format_map[psf->format]) {
       memset(info, 0, 16 * sizeof(*info));
 
+      info[0] = 0xbadf0000;
       info[1] = 0x80004000;
       info[12] = nve4_suldp_lib_offset[PIPE_FORMAT_R32G32B32A32_UINT] +
          screen->lib_code->start;
       return;
    }
    res = nv04_resource(sf->base.texture);
+
+   address = res->address + sf->offset;
 
    info[8] = sf->width;
    info[9] = sf->height;
@@ -574,9 +578,9 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
 
    info[12] = nve4_suldp_lib_offset[sf->base.format] + screen->lib_code->start;
 
-   info[13] = (sf->width << log2cpp) - 1;
+   /* limit in bytes for raw access */
+   info[13] = (0x06 << 22) | ((sf->width << log2cpp) - 1);
 
-   info[0] = res->address + sf->offset;
    info[1] = nve4_su_format_map[sf->base.format];
 
 #if 0
@@ -595,6 +599,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
 #endif
 
    if (res->base.target == PIPE_BUFFER) {
+      info[0]  = address >> 8;
       info[2]  = sf->width - 1;
       info[2] |= (0xff & nve4_su_format_aux_map[sf->base.format]) << 22;
       info[3]  = 0;
@@ -608,6 +613,14 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
       struct nv50_miptree *mt = nv50_miptree(&res->base);
       struct nv50_miptree_level *lvl = &mt->level[sf->base.u.tex.level];
 
+      if (sf->base.u.tex.first_layer) {
+         if (!mt->layout_3d) {
+            address += sf->base.u.tex.first_layer * mt->layer_stride;
+         } else {
+            /* ? */
+         }
+      }
+      info[0]  = address >> 8;
       info[2]  = sf->width - 1;
       info[2] |= (0xff & nve4_su_format_aux_map[sf->base.format]) << 22;
       info[3]  = (0x88 << 24) | (lvl->pitch / 64);

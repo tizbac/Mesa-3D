@@ -13,8 +13,8 @@
 #define NVE4_CP_INPUT_TEX_STRIDE  4
 #define NVE4_CP_INPUT_TEX_MAX     32
 #define NVE4_CP_INPUT_MS_OFFSETS  0x10c0
-#define NVE4_CP_INPUT_SUF(i)     (0x1100 + (i) * 4)
 #define NVE4_CP_INPUT_SUF_STRIDE  64
+#define NVE4_CP_INPUT_SUF(i)     (0x1100 + (i) * NVE4_CP_INPUT_SUF_STRIDE)
 #define NVE4_CP_INPUT_SUF_MAX     32
 #define NVE4_CP_INPUT_SIZE_MAX    0x1900
 
@@ -62,7 +62,7 @@ nve4_cp_launch_desc_init_default(struct nve4_cp_launch_desc *desc)
    memset(desc, 0, sizeof(*desc));
 
    desc->unk0[7]  = 0xbc000000;
-   desc->unk9[1]  = 0x44014000;
+   desc->unk9[2]  = 0x44014000;
    desc->unk47[0] = 0x30002000;
 }
 

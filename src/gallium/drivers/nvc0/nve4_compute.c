@@ -80,6 +80,13 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    PUSH_DATA (push, magic[0]);
    PUSH_DATA (push, 0xff);
 
+   BEGIN_NVC0(push, NVE4_COMPUTE(CODE_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, screen->text->offset);
+   PUSH_DATA (push, screen->text->offset);
+   BEGIN_NVC0(push, NVE4_COMPUTE(TEMP_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, screen->tls->offset);
+   PUSH_DATA (push, screen->tls->offset);
+
    /* Unified address space ? Who needs that ? Certainly not OpenCL.
     *
     * FATAL: Buffers with addresses inside [0x1000000, 0x3000000] will NOT be
@@ -135,6 +142,8 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    PUSH_DATA (push, 1);
    PUSH_DATA (push, 3); /* 7 */
    PUSH_DATA (push, 1);
+   BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
+   PUSH_DATA (push, NVE4_COMPUTE_FLUSH_CB);
 
    return 0;
 }
@@ -181,6 +190,10 @@ nve4_compute_validate_surfaces(struct nvc0_context *nvc0)
             BCTX_REFN(nvc0->bufctx_cp, CP_SUF, res, RD);
       }
    }
+   if (nvc0->surfaces_dirty[t]) {
+      BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
+      PUSH_DATA (push, NVE4_COMPUTE_FLUSH_CB);
+   }
 
    /* re-reference non-dirty surfaces */
    mask = nvc0->surfaces_valid[t] & ~nvc0->surfaces_dirty[t];
@@ -207,7 +220,7 @@ nve4_compute_validate_samplers(struct nvc0_context *nvc0)
 {
    boolean need_flush = nve4_validate_tsc(nvc0, 5);
    if (need_flush) {
-      BEGIN_NVC0(nvc0->base.pushbuf, SUBC_COMPUTE(0x1330), 1);
+      BEGIN_NVC0(nvc0->base.pushbuf, NVE4_COMPUTE(TSC_FLUSH), 1);
       PUSH_DATA (nvc0->base.pushbuf, 0);
    }
 }
@@ -234,7 +247,7 @@ nve4_compute_set_tex_handles(struct nvc0_context *nvc0)
    n = util_logbase2(dirty) + 1 - i;
    assert(n);
 
-   address = nvc0->screen->uniform_bo->offset + NVE4_CP_INPUT_TEX(i);
+   address = nvc0->screen->parm->offset + NVE4_CP_INPUT_TEX(i);
 
    BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_ADDRESS_HIGH), 2);
    PUSH_DATAh(push, address);
@@ -243,8 +256,11 @@ nve4_compute_set_tex_handles(struct nvc0_context *nvc0)
    PUSH_DATA (push, n * 4);
    PUSH_DATA (push, 0x1);
    BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 1 + n);
-   PUSH_DATA (push, 0x41);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_EXEC_UNKVAL_DATA);
    PUSH_DATAp(push, &nvc0->tex_handles[s][i], n);
+
+   BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
+   PUSH_DATA (push, NVE4_COMPUTE_FLUSH_CB);
 
    nvc0->textures_dirty[s] = 0;
    nvc0->samplers_dirty[s] = 0;
@@ -268,7 +284,15 @@ nve4_compute_validate_program(struct nvc0_context *nvc0)
    if (unlikely(!prog->code_size))
       return FALSE;
 
-   return nvc0_program_upload_code(nvc0, prog);
+   if (likely(prog->code_size)) {
+      if (nvc0_program_upload_code(nvc0, prog)) {
+         struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+         BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
+         PUSH_DATA (push, NVE4_COMPUTE_FLUSH_CODE);
+         return TRUE;
+      }
+   }
+   return FALSE;
 }
 
 
@@ -318,7 +342,7 @@ nve4_compute_upload_input(struct nvc0_context *nvc0, const void *input)
    PUSH_DATA (push, cp->parm_size);
    PUSH_DATA (push, 0x1);
    BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 1 + (cp->parm_size / 4));
-   PUSH_DATA (push, 0x41);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_EXEC_UNKVAL_DATA);
    PUSH_DATAp(push, input, cp->parm_size / 4);
 
    BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
@@ -414,6 +438,20 @@ nve4_launch_grid(struct pipe_context *pipe,
 
    nve4_compute_upload_input(nvc0, input);
 
+   /* upload descriptor and flush */
+#if 0
+   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, desc_gpuaddr);
+   PUSH_DATA (push, desc_gpuaddr);
+   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_SIZE), 2);
+   PUSH_DATA (push, 256);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_UNK0184_UNKVAL);
+   BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 1 + (256 / 4));
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_EXEC_UNKVAL_DESC);
+   PUSH_DATAp(push, (const uint32_t *)desc, 256 / 4);
+   BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
+   PUSH_DATA (push, NVE4_COMPUTE_FLUSH_CB | NVE4_COMPUTE_FLUSH_CODE);
+#endif
    BEGIN_NVC0(push, NVE4_COMPUTE(LAUNCH_DESC_ADDRESS), 1);
    PUSH_DATA (push, desc_gpuaddr >> 8);
    BEGIN_NVC0(push, NVE4_COMPUTE(LAUNCH), 1);
@@ -485,11 +523,11 @@ nve4_compute_validate_textures(struct nvc0_context *nvc0)
       nvc0->tex_handles[s][i] |= NVE4_TIC_ENTRY_INVALID;
 
    if (n[0]) {
-      BEGIN_NIC0(push, SUBC_COMPUTE(0x1334), n[0]);
+      BEGIN_NIC0(push, NVE4_COMPUTE(TIC_FLUSH), n[0]);
       PUSH_DATAp(push, commands[0], n[0]);
    }
    if (n[1]) {
-      BEGIN_NIC0(push, SUBC_COMPUTE(0x1338), n[1]);
+      BEGIN_NIC0(push, NVE4_COMPUTE(TEX_CACHE_CTL), n[1]);
       PUSH_DATAp(push, commands[1], n[1]);
    }
 
