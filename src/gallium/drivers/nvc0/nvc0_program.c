@@ -610,6 +610,9 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset)
    prog->relocs = info->bin.relocData;
    prog->max_gpr = MAX2(4, (info->bin.maxGPR + 1));
 
+   prog->code[0] = 0x00001de7;
+   prog->code[1] = 0x80000000;
+
    prog->vp.need_vertex_id = info->io.vertexId < PIPE_MAX_SHADER_INPUTS;
 
    if (info->io.edgeFlagOut < PIPE_MAX_ATTRIBS)
@@ -679,8 +682,9 @@ boolean
 nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
 {
    struct nvc0_screen *screen = nvc0->screen;
+   const boolean is_cp = prog->type == PIPE_SHADER_COMPUTE;
    int ret;
-   uint32_t size = prog->code_size + NVC0_SHADER_HEADER_SIZE;
+   uint32_t size = prog->code_size + (is_cp ? 0 : NVC0_SHADER_HEADER_SIZE);
    uint32_t lib_pos = screen->lib_code->start;
    uint32_t code_pos;
 
@@ -696,7 +700,7 @@ nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
     * latency information is expected only at certain positions.
     */
    if (screen->base.class_3d >= NVE4_3D_CLASS)
-      size = size + 0x70;
+      size = size + (is_cp ? 0x40 : 0x70);
    size = align(size, 0x40);
 
    ret = nouveau_heap_alloc(screen->text_heap, size, prog, &prog->mem);
@@ -721,18 +725,27 @@ nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
    assert((prog->immd_size == 0) || (prog->immd_base + prog->immd_size <=
                                      prog->mem->start + prog->mem->size));
 
-   if (screen->base.class_3d >= NVE4_3D_CLASS) {
-      switch (prog->mem->start & 0xff) {
-      case 0x40: prog->code_base += 0x70; break;
-      case 0x80: prog->code_base += 0x30; break;
-      case 0xc0: prog->code_base += 0x70; break;
-      default:
-         prog->code_base += 0x30;
-         assert((prog->mem->start & 0xff) == 0x00);
-         break;
+   if (!is_cp) {
+      if (screen->base.class_3d >= NVE4_3D_CLASS) {
+         switch (prog->mem->start & 0xff) {
+         case 0x40: prog->code_base += 0x70; break;
+         case 0x80: prog->code_base += 0x30; break;
+         case 0xc0: prog->code_base += 0x70; break;
+         default:
+            prog->code_base += 0x30;
+            assert((prog->mem->start & 0xff) == 0x00);
+            break;
+         }
       }
+      code_pos = prog->code_base + NVC0_SHADER_HEADER_SIZE;
+   } else {
+      if (screen->base.class_3d >= NVE4_3D_CLASS) {
+         if (prog->mem->start & 0x40)
+            prog->code_base += 0x40;
+         assert((prog->code_base & 0x7f) == 0x00);
+      }
+      code_pos = prog->code_base;
    }
-   code_pos = prog->code_base + NVC0_SHADER_HEADER_SIZE;
 
    if (prog->relocs)
       nv50_ir_relocate_code(prog->relocs, prog->code, code_pos, lib_pos, 0);
@@ -742,10 +755,10 @@ nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
       nvc0_program_dump(prog);
 #endif
 
-   nvc0->base.push_data(&nvc0->base, screen->text, prog->code_base,
-                        NOUVEAU_BO_VRAM, NVC0_SHADER_HEADER_SIZE, prog->hdr);
-   nvc0->base.push_data(&nvc0->base, screen->text,
-                        prog->code_base + NVC0_SHADER_HEADER_SIZE,
+   if (!is_cp)
+      nvc0->base.push_data(&nvc0->base, screen->text, prog->code_base,
+                           NOUVEAU_BO_VRAM, NVC0_SHADER_HEADER_SIZE, prog->hdr);
+   nvc0->base.push_data(&nvc0->base, screen->text, code_pos,
                         NOUVEAU_BO_VRAM, prog->code_size, prog->code);
    if (prog->immd_size)
       nvc0->base.push_data(&nvc0->base,
@@ -816,9 +829,12 @@ nvc0_program_symbol_offset(const struct nvc0_program *prog, uint32_t label)
 {
    const struct nv50_ir_prog_symbol *syms =
       (const struct nv50_ir_prog_symbol *)prog->cp.syms;
+   unsigned base = 0;
    unsigned i;
+   if (prog->type != PIPE_SHADER_COMPUTE)
+      base = NVC0_SHADER_HEADER_SIZE;
    for (i = 0; i < prog->cp.num_syms; ++i)
       if (syms[i].label == label)
-         return prog->mem->start + syms[i].offset;
+         return prog->code_base + base + syms[i].offset;
    return ~0;
 }
