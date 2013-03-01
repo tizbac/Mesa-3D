@@ -399,15 +399,16 @@ nve4_launch_grid(struct pipe_context *pipe,
    struct nouveau_bo *desc_bo;
    int ret;
 
-   ret = !nve4_compute_state_validate(nvc0);
-   if (ret)
-      goto out;
-
    desc = nve4_compute_alloc_launch_desc(&nvc0->base, &desc_bo, &desc_gpuaddr);
    if (!desc)
       goto out;
    BCTX_REFN_bo(nvc0->bufctx_cp, CP_DESC, NOUVEAU_BO_GART | NOUVEAU_BO_RD,
                 desc_bo);
+
+   ret = !nve4_compute_state_validate(nvc0);
+   if (ret)
+      goto out;
+
    nve4_compute_setup_launch_desc(nvc0, desc, label, block_layout, grid_layout);
    nve4_compute_dump_launch_desc(desc);
 
