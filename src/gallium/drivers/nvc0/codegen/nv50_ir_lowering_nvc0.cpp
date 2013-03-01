@@ -1305,6 +1305,20 @@ NVC0LoweringPass::handleRDSV(Instruction *i)
       assert(prog->getType() == Program::TYPE_TESSELLATION_EVAL);
       readTessCoord(i->getDef(0)->asLValue(), i->getSrc(0)->reg.data.sv.index);
       break;
+   case SV_NTID:
+   case SV_NCTAID:
+   case SV_GRIDID:
+      assert(targ->getChipset() >= NVISA_GK104_CHIPSET);
+      // Kepler only
+      if (sym->reg.data.sv.index > 2) {
+         i->op = OP_MOV;
+         i->setSrc(0, bld.mkImm(0));
+         return true;
+      }
+      addr += prog->driver->prop.cp.gridInfoBase;
+      bld.mkLoad(TYPE_U32, i->getDef(0),
+                 bld.mkSymbol(FILE_MEMORY_CONST, 0, TYPE_U32, addr), NULL);
+      break;
    default:
       if (prog->getType() == Program::TYPE_TESSELLATION_EVAL)
          vtx = bld.mkOp1v(OP_PFETCH, TYPE_U32, bld.getSSA(), bld.mkImm(0));
