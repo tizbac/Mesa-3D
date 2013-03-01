@@ -1817,7 +1817,8 @@ CodeEmitterNVC0::emitATOM(const Instruction *i)
    }
 
    if (i->subOp == NV50_IR_SUBOP_ATOM_CAS) {
-      assert(hasDst);
+      if (!hasDst)
+         code[1] |= 63 << 11;
       srcId(i->src(2), 32 + 17);
    }
 }
