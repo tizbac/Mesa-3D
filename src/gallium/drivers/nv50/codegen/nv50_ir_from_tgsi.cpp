@@ -2023,6 +2023,10 @@ Converter::handleSTORE()
    }
 }
 
+// XXX: These only work on resources with the single-component u32/s32 formats.
+// Therefore the result is replicated. This might not be intended by TGSI, but
+// operating on more than 1 component would produce undefined results because
+// they do not exist.
 void
 Converter::handleATOM(Value *dst0[4], DataType ty, uint16_t subOp)
 {
@@ -2045,9 +2049,13 @@ Converter::handleATOM(Value *dst0[4], DataType ty, uint16_t subOp)
       TexTarget targ = getResourceTarget(code, r);
       int idx = code->resources[r].slot;
       defv.push_back(dst);
+      srcv.push_back(fetchSrc(2, 0));
+      if (subOp == NV50_IR_SUBOP_ATOM_CAS)
+         srcv.push_back(fetchSrc(3, 0));
       TexInstruction *tex = mkTex(OP_SUREDP, targ, idx, 0, defv, srcv);
+      tex->subOp = subOp;
       tex->tex.mask = 1;
-      tex->dType = ty;
+      tex->setType(ty);
    }
 
    for (int c = 0; c < 4; ++c)
