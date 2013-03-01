@@ -1198,11 +1198,14 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
       }
       Instruction *red = bld.mkOp(OP_ATOM, su->dType, su->getDef(0));
       red->subOp = su->subOp;
-      red->setPredicate(cc, pred);
       if (!gMemBase)
          gMemBase = bld.mkSymbol(FILE_MEMORY_GLOBAL, 0, TYPE_U32, 0);
       red->setSrc(0, gMemBase);
+      red->setSrc(1, su->getSrc(3));
+      if (su->subOp == NV50_IR_SUBOP_ATOM_CAS)
+         red->setSrc(2, su->getSrc(4));
       red->setIndirect(0, 0, su->getSrc(0));
+      red->setPredicate(cc, pred);
       delete_Instruction(bld.getProgram(), su);
    } else {
       su->sType = TYPE_U8;
