@@ -1118,13 +1118,17 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
    }
 
    if (su->op == OP_SUREDP) {
-      //  bf = g[] address & 0xff
-      // eau = g[] address >> 8
-      bld.mkOp3(OP_PERMT, TYPE_U32,  bf,   bf, bld.loadImm(NULL, 0x6540), eau);
+      Value *lo = su->tex.target == TEX_TARGET_BUFFER ? bf : zero;
+      //  bf == g[] address & 0xff
+      // eau == g[] address >> 8
+      bld.mkOp3(OP_PERMT, TYPE_U32,  bf,   lo, bld.loadImm(NULL, 0x6540), eau);
       bld.mkOp3(OP_PERMT, TYPE_U32, eau, zero, bld.loadImm(NULL, 0x0007), eau);
    }
 
    bld.mkOp2(OP_MERGE, TYPE_U64, addr, bf, eau);
+
+   if (su->op == OP_SUREDP && su->tex.target == TEX_TARGET_BUFFER)
+      bld.mkOp2(OP_ADD, TYPE_U64, addr, addr, bf);
 
    // let's hope this works ...
    v = raw ?
@@ -1212,7 +1216,7 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
       red->setPredicate(cc, pred);
       delete_Instruction(bld.getProgram(), su);
    } else {
-      su->sType = TYPE_U8;
+      su->sType = (su->tex.target == TEX_TARGET_BUFFER) ? TYPE_U32 : TYPE_U8;
    }
 }
 
