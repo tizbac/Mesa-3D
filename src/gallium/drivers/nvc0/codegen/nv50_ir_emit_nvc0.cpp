@@ -1217,7 +1217,7 @@ CodeEmitterNVC0::emitFlow(const Instruction *i)
    case OP_CALL:
       code[1] = f->absolute ? 0x10000000 : 0x50000000;
       if (f->indirect)
-         code[1] |= 0x4000; // indirect calls always use c[] source
+         code[0] |= 0x4000; // indirect calls always use c[] source
       mask = 2;
       break;
 
@@ -1255,7 +1255,7 @@ CodeEmitterNVC0::emitFlow(const Instruction *i)
       code[0] |= 1 << 16;
 
    if (f->indirect) {
-      if (code[1] & 0x4000) {
+      if (code[0] & 0x4000) {
          assert(i->srcExists(0) && i->src(0).getFile() == FILE_MEMORY_CONST);
          setAddress16(i->src(0));
          code[1] |= i->getSrc(0)->reg.fileIndex << 10;
