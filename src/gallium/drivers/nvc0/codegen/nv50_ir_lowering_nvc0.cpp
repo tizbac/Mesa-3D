@@ -1129,9 +1129,9 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
    if (atom && su->tex.target == TEX_TARGET_BUFFER)
       bld.mkOp2(OP_ADD, TYPE_U64, addr, addr, off);
 
-   // let's hope this works ...
+   // let's just set it 0 for raw access and hope it works
    v = raw ?
-      bld.loadImm(NULL, 0x04804) : loadResInfo32(NULL, base + NVE4_SU_INFO_FMT);
+      bld.mkImm(0) : loadResInfo32(NULL, base + NVE4_SU_INFO_FMT);
 
    // get rid of old coordinate sources, make space for fmt info and predicate
    su->moveSources(arg, 3 - arg);
