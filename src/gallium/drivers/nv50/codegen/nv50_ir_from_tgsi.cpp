@@ -2046,13 +2046,14 @@ Converter::handleATOM(Value *dst0[4], DataType ty, uint16_t subOp)
          insn->setSrc(2, fetchSrc(3, 0));
       insn->setIndirect(0, 0, srcv.at(0));
    } else {
+      operation op = isResourceRaw(code, r) ? OP_SUREDB : OP_SUREDP;
       TexTarget targ = getResourceTarget(code, r);
       int idx = code->resources[r].slot;
       defv.push_back(dst);
       srcv.push_back(fetchSrc(2, 0));
       if (subOp == NV50_IR_SUBOP_ATOM_CAS)
          srcv.push_back(fetchSrc(3, 0));
-      TexInstruction *tex = mkTex(OP_SUREDP, targ, idx, 0, defv, srcv);
+      TexInstruction *tex = mkTex(op, targ, idx, 0, defv, srcv);
       tex->subOp = subOp;
       tex->tex.mask = 1;
       tex->setType(ty);
