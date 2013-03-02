@@ -1282,9 +1282,11 @@ NVC0LoweringPass::handleRDSV(Instruction *i)
    if (addr >= 0x400) {
       // mov $sreg
       if (sym->reg.data.sv.index > 2) {
+         int n = (sym->reg.data.sv.sv == SV_NTID ||
+                  sym->reg.data.sv.sv == SV_NCTAID) ? 1 : 0;
          // handle 4th component of TID,NTID,CTAID,NCTAID
          i->op = OP_MOV;
-         i->setSrc(0, bld.mkImm(0));
+         i->setSrc(0, bld.mkImm(n));
       }
       return true;
    }
@@ -1315,7 +1317,7 @@ NVC0LoweringPass::handleRDSV(Instruction *i)
       // Kepler only
       if (sym->reg.data.sv.index > 2) {
          i->op = OP_MOV;
-         i->setSrc(0, bld.mkImm(0));
+         i->setSrc(0, bld.mkImm(sym->reg.data.sv.sv == SV_GRIDID ? 0 : 1));
          return true;
       }
       addr += prog->driver->prop.cp.gridInfoBase;
