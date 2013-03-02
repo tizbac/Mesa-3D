@@ -153,6 +153,7 @@ const char *operationStr[OP_LAST + 1] =
    "suldp",
    "sustb",
    "sustp",
+   "suredb",
    "suredp",
    "sulea",
    "subfm",

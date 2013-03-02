@@ -123,6 +123,7 @@ enum operation
    OP_SULDP, // surface load (formatted)
    OP_SUSTB, // surface store (raw)
    OP_SUSTP, // surface store (formatted)
+   OP_SUREDB,
    OP_SUREDP, // surface reduction (atomic op)
    OP_SULEA,   // surface load effective address
    OP_SUBFM,   // surface bitfield manipulation
@@ -204,7 +205,6 @@ enum operation
 #define NV50_IR_SUBOP_SULD_ZERO    0
 #define NV50_IR_SUBOP_SULD_TRAP    1
 #define NV50_IR_SUBOP_SULD_SDCL    3
-#define NV50_IR_SUBOP_SURED_BYTES  1
 #define NV50_IR_SUBOP_SUBFM_3D     1
 #define NV50_IR_SUBOP_SUCLAMP_2D   0x10
 #define NV50_IR_SUBOP_SUCLAMP_SD(r, d) (( 0 + (r)) | ((d == 2) ? 0x10 : 0))

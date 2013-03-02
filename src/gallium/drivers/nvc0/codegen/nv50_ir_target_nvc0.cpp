@@ -159,7 +159,7 @@ void TargetNVC0::initOpInfo()
       OP_DISCARD, OP_CONT, OP_BREAK, OP_PRECONT, OP_PREBREAK, OP_PRERET,
       OP_JOIN, OP_JOINAT, OP_BRKPT, OP_MEMBAR, OP_EMIT, OP_RESTART,
       OP_QUADON, OP_QUADPOP, OP_TEXBAR, OP_SUSTB, OP_SUSTP, OP_SUREDP,
-      OP_BAR
+      OP_SUREDB, OP_BAR
    };
 
    static const operation noPred[] =
