@@ -1107,6 +1107,15 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
       // eau == g[] address >> 8
       bld.mkOp3(OP_PERMT, TYPE_U32,  bf,   lo, bld.loadImm(NULL, 0x6540), eau);
       bld.mkOp3(OP_PERMT, TYPE_U32, eau, zero, bld.loadImm(NULL, 0x0007), eau);
+   } else
+   if (su->op == OP_SULDP && su->tex.target == TEX_TARGET_BUFFER) {
+      // Convert from u32 to u8 address format, which is what the library code
+      // doing SULDP currently uses.
+      // XXX: can SUEAU do this ?
+      // XXX: does it matter that we don't mask high bytes in bf ?
+      // Grrr.
+      bld.mkOp2(OP_SHR, TYPE_U32, off, bf, bld.mkImm(8));
+      bld.mkOp2(OP_ADD, TYPE_U32, eau, eau, off);
    }
 
    bld.mkOp2(OP_MERGE, TYPE_U64, addr, bf, eau);
