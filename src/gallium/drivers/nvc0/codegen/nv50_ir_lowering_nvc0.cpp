@@ -987,7 +987,9 @@ void
 NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
 {
    Instruction *insn;
-   const bool raw = su->op == OP_SULDB || su->op == OP_SUSTB;
+   const bool atom = su->op == OP_SUREDB || su->op == OP_SUREDP;
+   const bool raw =
+      su->op == OP_SULDB || su->op == OP_SUSTB || su->op == OP_SUREDB;
    const int idx = su->tex.r;
    const int dim = su->tex.target.getDim();
    const int arg = dim + (su->tex.target.isArray() ? 1 : 0);
@@ -1110,8 +1112,12 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
       bld.mkOp2(OP_OR, TYPE_U8, pred, pred, p1);
    }
 
-   if (su->op == OP_SUREDP) {
-      Value *lo = su->tex.target == TEX_TARGET_BUFFER ? bf : zero;
+   if (atom) {
+      Value *lo = bf;
+      if (su->tex.target == TEX_TARGET_BUFFER) {
+         lo = zero;
+         bld.mkMov(off, bf);
+      }
       //  bf == g[] address & 0xff
       // eau == g[] address >> 8
       bld.mkOp3(OP_PERMT, TYPE_U32,  bf,   lo, bld.loadImm(NULL, 0x6540), eau);
@@ -1120,8 +1126,8 @@ NVC0LoweringPass::processSurfaceCoordsNVE4(TexInstruction *su)
 
    bld.mkOp2(OP_MERGE, TYPE_U64, addr, bf, eau);
 
-   if (su->op == OP_SUREDP && su->tex.target == TEX_TARGET_BUFFER)
-      bld.mkOp2(OP_ADD, TYPE_U64, addr, addr, bf);
+   if (atom && su->tex.target == TEX_TARGET_BUFFER)
+      bld.mkOp2(OP_ADD, TYPE_U64, addr, addr, off);
 
    // let's hope this works ...
    v = raw ?
@@ -1184,7 +1190,7 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
       delete_Instruction(bld.getProgram(), su);
    }
 
-   if (su->op == OP_SUREDP) {
+   if (su->op == OP_SUREDB || su->op == OP_SUREDP) {
       Value *pred = su->getSrc(2);
       CondCode cc = CC_NOT_P;
       if (su->getPredicate()) {
@@ -1504,6 +1510,7 @@ NVC0LoweringPass::visit(Instruction *i)
    case OP_SULDP:
    case OP_SUSTB:
    case OP_SUSTP:
+   case OP_SUREDB:
    case OP_SUREDP:
       if (targ->getChipset() >= NVISA_GK104_CHIPSET)
          handleSurfaceOpNVE4(i->asTex());
