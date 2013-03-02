@@ -612,12 +612,15 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
    } else {
       struct nv50_miptree *mt = nv50_miptree(&res->base);
       struct nv50_miptree_level *lvl = &mt->level[sf->base.u.tex.level];
+      const unsigned z = sf->base.u.tex.first_layer;
 
-      if (sf->base.u.tex.first_layer) {
-         if (!mt->layout_3d) {
-            address += sf->base.u.tex.first_layer * mt->layer_stride;
+      if (z) {
+         if (mt->layout_3d) {
+            address += nvc0_mt_zslice_offset(mt, psf->u.tex.level, z);
+            /* doesn't work if z passes z-tile boundary */
+            assert(sf->depth == 1);
          } else {
-            /* ? */
+            address += mt->layer_stride * z;
          }
       }
       info[0]  = address >> 8;
