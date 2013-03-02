@@ -87,6 +87,16 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    PUSH_DATAh(push, screen->tls->offset);
    PUSH_DATA (push, screen->tls->offset);
 
+   /* NOTE: these do not affect the state used by the 3D object */
+   BEGIN_NVC0(push, NVE4_COMPUTE(TIC_ADDRESS_HIGH), 3);
+   PUSH_DATAh(push, screen->txc->offset);
+   PUSH_DATA (push, screen->txc->offset);
+   PUSH_DATA (push, NVC0_TIC_MAX_ENTRIES - 1);
+   BEGIN_NVC0(push, NVE4_COMPUTE(TSC_ADDRESS_HIGH), 3);
+   PUSH_DATAh(push, screen->txc->offset + 65536);
+   PUSH_DATA (push, screen->txc->offset + 65536);
+   PUSH_DATA (push, NVC0_TSC_MAX_ENTRIES - 1);
+
    /* Unified address space ? Who needs that ? Certainly not OpenCL.
     *
     * FATAL: Buffers with addresses inside [0x1000000, 0x3000000] will NOT be
