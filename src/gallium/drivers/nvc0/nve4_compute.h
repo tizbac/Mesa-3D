@@ -20,7 +20,10 @@
 #define NVE4_CP_INPUT_SUF_STRIDE    64
 #define NVE4_CP_INPUT_SUF(i)       (0x1100 + (i) * NVE4_CP_INPUT_SUF_STRIDE)
 #define NVE4_CP_INPUT_SUF_MAX       32
-#define NVE4_CP_INPUT_SIZE_MAX      0x1900
+#define NVE4_CP_INPUT_TRAP_DATA_PTR 0x1900
+#define NVE4_CP_INPUT_SIZE          0x1a00
+#define NVE4_CP_PARAM_TRAP_DATA     0x1a00
+#define NVE4_CP_PARAM_SIZE          0x2000
 
 struct nve4_cp_launch_desc
 {

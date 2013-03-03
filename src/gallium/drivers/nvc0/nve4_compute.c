@@ -60,7 +60,7 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
       return ret;
    }
 
-   ret = nouveau_bo_new(dev, NOUVEAU_BO_VRAM, 0, NVE4_CP_INPUT_SIZE_MAX, NULL,
+   ret = nouveau_bo_new(dev, NOUVEAU_BO_VRAM, 0, NVE4_CP_PARAM_SIZE, NULL,
                         &screen->parm);
    if (ret)
       return ret;
@@ -120,9 +120,8 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
       IMMED_NVC0(push, SUBC_COMPUTE(0x518), 0);
    }
 
-   /* XXX: Does this interfere with 3D ? */
    BEGIN_NVC0(push, NVE4_COMPUTE(TEX_CB_INDEX), 1);
-   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 0); /* does not interefere with 3D */
 
    if (obj_class >= NVF0_COMPUTE_CLASS)
       IMMED_NVC0(push, SUBC_COMPUTE(0x02c4), 1);
@@ -155,6 +154,18 @@ nve4_screen_compute_setup(struct nvc0_screen *screen,
    BEGIN_NVC0(push, NVE4_COMPUTE(FLUSH), 1);
    PUSH_DATA (push, NVE4_COMPUTE_FLUSH_CB);
 
+#ifdef DEBUG
+   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, screen->parm->offset + NVE4_CP_INPUT_TRAP_DATA_PTR);
+   PUSH_DATA (push, screen->parm->offset + NVE4_CP_INPUT_TRAP_DATA_PTR);
+   BEGIN_NVC0(push, NVE4_COMPUTE(UPLOAD_SIZE), 2);
+   PUSH_DATA (push, 8);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_UNK0184_UNKVAL);
+   BEGIN_1IC0(push, NVE4_COMPUTE(UPLOAD_EXEC), 3);
+   PUSH_DATA (push, NVE4_COMPUTE_UPLOAD_EXEC_UNKVAL_DATA);
+   PUSH_DATA (push, screen->parm->offset + NVE4_CP_PARAM_TRAP_DATA);
+   PUSH_DATAh(push, screen->parm->offset + NVE4_CP_PARAM_TRAP_DATA);
+#endif
    return 0;
 }
 
@@ -414,7 +425,7 @@ nve4_compute_setup_launch_desc(struct nvc0_context *nvc0,
       if (nvc0->constbuf[s][i].u.buf)
          nve4_cp_launch_desc_set_ctx_cb(desc, i + 1, &nvc0->constbuf[s][i]);
    }
-   nve4_cp_launch_desc_set_cb(desc, 0, screen->parm, 0, NVE4_CP_INPUT_SIZE_MAX);
+   nve4_cp_launch_desc_set_cb(desc, 0, screen->parm, 0, NVE4_CP_INPUT_SIZE);
 }
 
 static INLINE struct nve4_cp_launch_desc *

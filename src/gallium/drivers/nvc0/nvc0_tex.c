@@ -625,6 +625,7 @@ nve4_set_surface_info(struct nouveau_pushbuf *push,
       }
       info[0]  = address >> 8;
       info[2]  = sf->width - 1;
+      /* NOTE: this is really important: */
       info[2] |= (0xff & nve4_su_format_aux_map[sf->base.format]) << 22;
       info[3]  = (0x88 << 24) | (lvl->pitch / 64);
       info[4]  = sf->height - 1;
@@ -711,9 +712,9 @@ static const uint8_t nve4_su_format_map[PIPE_FORMAT_COUNT] =
  */
 static const uint16_t nve4_su_format_aux_map[PIPE_FORMAT_COUNT] =
 {
-   [PIPE_FORMAT_R32G32B32A32_FLOAT] = 0x4802,
-   [PIPE_FORMAT_R32G32B32A32_SINT] = 0x4802,
-   [PIPE_FORMAT_R32G32B32A32_UINT] = 0x4802,
+   [PIPE_FORMAT_R32G32B32A32_FLOAT] = 0x4842,
+   [PIPE_FORMAT_R32G32B32A32_SINT] = 0x4842,
+   [PIPE_FORMAT_R32G32B32A32_UINT] = 0x4842,
 
    [PIPE_FORMAT_R16G16B16A16_UNORM] = 0x3933,
    [PIPE_FORMAT_R16G16B16A16_SNORM] = 0x3933,
