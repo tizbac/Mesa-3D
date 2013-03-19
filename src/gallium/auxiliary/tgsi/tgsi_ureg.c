@@ -99,20 +99,29 @@ struct ureg_program
    struct pipe_context *pipe;
 
    struct {
+      unsigned first_index;
+      unsigned last_index;
       unsigned semantic_name;
       unsigned semantic_index;
+      unsigned usage_mask; /* = TGSI_WRITE_MASK_X/XY/XYZ/XYZW */
       unsigned interp;
       unsigned char cylindrical_wrap;
       unsigned char centroid;
    } fs_input[UREG_MAX_INPUT];
    unsigned nr_fs_inputs;
 
-   unsigned vs_inputs[UREG_MAX_INPUT/32];
+   struct {
+      unsigned first_index;
+      unsigned index_count;
+   } vs_input[UREG_MAX_INPUT];
+   unsigned nr_vs_inputs;
 
    struct {
-      unsigned index;
+      unsigned first_index;
+      unsigned last_index;
       unsigned semantic_name;
       unsigned semantic_index;
+      unsigned usage_mask; /* = TGSI_WRITE_MASK_X/XY/XYZ/XYZW */
    } gs_input[UREG_MAX_INPUT];
    unsigned nr_gs_inputs;
 
@@ -124,9 +133,11 @@ struct ureg_program
    unsigned nr_system_values;
 
    struct {
+      unsigned first_index;
+      unsigned last_index;
       unsigned semantic_name;
       unsigned semantic_index;
-      unsigned usage_mask; /* = TGSI_WRITEMASK_* */
+      unsigned usage_mask; /* = TGSI_WRITEMASK_X/XY/XYZ/XYZW */
    } output[UREG_MAX_OUTPUT];
    unsigned nr_outputs;
 
@@ -323,6 +334,51 @@ ureg_property_fs_depth_layout(struct ureg_program *ureg,
    ureg->property_fs_depth_layout = fs_depth_layout;
 }
 
+boolean
+ureg_DECL_fs_input_array(struct ureg_program *ureg,
+                         struct ureg_src *src,
+                         unsigned semantic_name,
+                         unsigned semantic_index,
+                         unsigned element_count,
+                         unsigned element_components,
+                         unsigned interp_mode,
+                         boolean cylindrical_wrap,
+                         boolean centroid)
+{
+   unsigned n, i;
+
+   assert(element_count);
+   assert(element_components >= 1 && element_components <= 4);
+
+   for (n = 0; n < ureg->nr_fs_inputs; n++) {
+      if (ureg->fs_input[n].semantic_name == semantic_name &&
+          ureg->fs_input[n].semantic_index == semantic_index)
+         goto out;
+   }
+
+   if (ureg->nr_fs_inputs < UREG_MAX_INPUT) {
+      unsigned index = n ? (ureg->fs_input[n - 1].last_index + 1) : 0;
+      ureg->fs_input[n].semantic_name = semantic_name;
+      ureg->fs_input[n].semantic_index = semantic_index;
+      ureg->fs_input[n].first_index = index;
+      ureg->fs_input[n].last_index = index + element_count - 1;
+      ureg->fs_input[n].usage_mask = (1 << element_count) - 1;
+      ureg->fs_input[n].interp = interp_mode;
+      ureg->fs_input[n].cylindrical_wrap = cylindrical_wrap;
+      ureg->fs_input[n].centroid = centroid;
+      ureg->nr_fs_inputs++;
+   } else {
+      set_bad(ureg);
+   }
+
+out:
+   for (i = 0; i < element_count; ++i)
+      src[i] = ureg_src_register(TGSI_FILE_INPUT,
+                                 ureg->fs_input[n].first_index + i);
+
+   return TRUE;
+}
+
 struct ureg_src
 ureg_DECL_fs_input_cyl_centroid(struct ureg_program *ureg,
                        unsigned semantic_name,
@@ -331,28 +387,42 @@ ureg_DECL_fs_input_cyl_centroid(struct ureg_program *ureg,
                        unsigned cylindrical_wrap,
                        unsigned centroid)
 {
+   struct ureg_src src;
+
+   ureg_DECL_fs_input_array(ureg, &src,
+                            semantic_name, semantic_index,
+                            1, 4,
+                            interp_mode, cylindrical_wrap, centroid);
+   return src;
+}
+
+
+boolean
+ureg_DECL_vs_input_array(struct ureg_program *ureg,
+                         struct ureg_src *src,
+                         unsigned first_index,
+                         unsigned element_count)
+{
    unsigned i;
 
-   for (i = 0; i < ureg->nr_fs_inputs; i++) {
-      if (ureg->fs_input[i].semantic_name == semantic_name &&
-          ureg->fs_input[i].semantic_index == semantic_index) {
+   assert(ureg->processor == TGSI_PROCESSOR_VERTEX);
+
+   for (i = 0; i < ureg->nr_vs_inputs; ++i) {
+      if (ureg->vs_input[i].first_index == i)
          goto out;
-      }
    }
 
-   if (ureg->nr_fs_inputs < UREG_MAX_INPUT) {
-      ureg->fs_input[i].semantic_name = semantic_name;
-      ureg->fs_input[i].semantic_index = semantic_index;
-      ureg->fs_input[i].interp = interp_mode;
-      ureg->fs_input[i].cylindrical_wrap = cylindrical_wrap;
-      ureg->fs_input[i].centroid = centroid;
-      ureg->nr_fs_inputs++;
-   } else {
-      set_bad(ureg);
+   if (ureg->nr_vs_inputs < UREG_MAX_INPUT) {
+      ureg->vs_input[i].first_index = first_index;
+      ureg->vs_input[i].index_count = element_count;
+      ureg->nr_vs_inputs++;
    }
 
 out:
-   return ureg_src_register(TGSI_FILE_INPUT, i);
+   for (i = 0; i < element_count; ++i)
+      src[i] = ureg_src_register(TGSI_FILE_INPUT, first_index + i);
+
+   return TRUE;
 }
 
 
@@ -360,30 +430,62 @@ struct ureg_src
 ureg_DECL_vs_input( struct ureg_program *ureg,
                     unsigned index )
 {
-   assert(ureg->processor == TGSI_PROCESSOR_VERTEX);
-   
-   ureg->vs_inputs[index/32] |= 1 << (index % 32);
-   return ureg_src_register( TGSI_FILE_INPUT, index );
+   struct ureg_src src;
+
+   ureg_DECL_vs_input_array(ureg, &src, index, 1);
+   return src;
 }
 
 
-struct ureg_src
-ureg_DECL_gs_input(struct ureg_program *ureg,
-                   unsigned index,
-                   unsigned semantic_name,
-                   unsigned semantic_index)
+boolean
+ureg_DECL_gs_input_array(struct ureg_program *ureg,
+                         struct ureg_src *src,
+                         unsigned semantic_name,
+                         unsigned semantic_index,
+                         unsigned element_count,
+                         unsigned element_components)
 {
+   unsigned n, i;
+
+   for (n = 0; n < ureg->nr_gs_inputs; ++n) {
+      if (ureg->gs_input[n].semantic_name == semantic_name &&
+          ureg->gs_input[n].semantic_index == semantic_index)
+         goto out;
+   }
+
    if (ureg->nr_gs_inputs < UREG_MAX_INPUT) {
-      ureg->gs_input[ureg->nr_gs_inputs].index = index;
-      ureg->gs_input[ureg->nr_gs_inputs].semantic_name = semantic_name;
-      ureg->gs_input[ureg->nr_gs_inputs].semantic_index = semantic_index;
+      unsigned index = n ? (ureg->gs_input[n - 1].last_index + 1) : 0;
+      ureg->gs_input[n].semantic_name = semantic_name;
+      ureg->gs_input[n].semantic_index = semantic_index;
+      ureg->gs_input[n].first_index = index;
+      ureg->gs_input[n].last_index = index + element_count - 1;
+      ureg->gs_input[n].usage_mask = (1 << element_components) - 1;
       ureg->nr_gs_inputs++;
    } else {
       set_bad(ureg);
    }
 
+out:
    /* XXX: Add suport for true 2D input registers. */
-   return ureg_src_register(TGSI_FILE_INPUT, index);
+   for (i = 0; i < element_count; ++i)
+      src[i] = ureg_src_register(TGSI_FILE_INPUT,
+                                 ureg->gs_input[n].first_index + i);
+
+   return TRUE;
+}
+
+
+struct ureg_src
+ureg_DECL_gs_input(struct ureg_program *ureg,
+                   unsigned semantic_name,
+                   unsigned semantic_index)
+{
+   struct ureg_src src;
+
+   ureg_DECL_gs_input_array(ureg, &src,
+                            semantic_name, semantic_index,
+                            1, 4);
+   return src;
 }
 
 
@@ -406,36 +508,74 @@ ureg_DECL_system_value(struct ureg_program *ureg,
 }
 
 
-struct ureg_dst 
-ureg_DECL_output_masked( struct ureg_program *ureg,
-                         unsigned name,
-                         unsigned index,
-                         unsigned usage_mask )
+boolean
+ureg_DECL_output_array(struct ureg_program *ureg,
+                       struct ureg_dst *dst,
+                       unsigned semantic_name,
+                       unsigned semantic_index,
+                       unsigned element_count,
+                       unsigned element_components)
 {
-   unsigned i;
+   unsigned n, i;
 
-   assert(usage_mask != 0);
-
-   for (i = 0; i < ureg->nr_outputs; i++) {
-      if (ureg->output[i].semantic_name == name &&
-          ureg->output[i].semantic_index == index) { 
-         ureg->output[i].usage_mask |= usage_mask;
+   for (n = 0; n < ureg->nr_outputs; ++n) {
+      if (ureg->output[n].semantic_name == semantic_name &&
+          ureg->output[n].semantic_index == semantic_index)
          goto out;
-      }
    }
 
    if (ureg->nr_outputs < UREG_MAX_OUTPUT) {
-      ureg->output[i].semantic_name = name;
-      ureg->output[i].semantic_index = index;
-      ureg->output[i].usage_mask = usage_mask;
+      unsigned index = n ? (ureg->output[n - 1].last_index + 1) : 0;
+      ureg->output[n].semantic_name = semantic_name;
+      ureg->output[n].semantic_index = semantic_index;
+      ureg->output[n].first_index = index;
+      ureg->output[n].last_index = index + element_count - 1;
+      ureg->output[n].usage_mask = (1 << element_components) - 1;
       ureg->nr_outputs++;
-   }
-   else {
-      set_bad( ureg );
    }
 
 out:
-   return ureg_dst_register( TGSI_FILE_OUTPUT, i );
+   debug_printf("%s: %u elements\n", __FUNCTION__, element_count);
+   for (i = 0; i < element_count; ++i)
+      dst[i] = ureg_dst_register(TGSI_FILE_OUTPUT,
+                                 ureg->output[n].first_index + i);
+
+   return TRUE;
+}
+
+
+struct ureg_dst
+ureg_DECL_output_masked( struct ureg_program *ureg,
+                         unsigned semantic_name,
+                         unsigned semantic_index,
+                         unsigned usage_mask )
+{
+   struct ureg_dst dst;
+   unsigned components;
+
+   switch (usage_mask) {
+   case TGSI_WRITEMASK_X:
+      components = 1;
+      break;
+   case TGSI_WRITEMASK_XY:
+      components = 2;
+      break;
+   case TGSI_WRITEMASK_XYZ:
+      components = 3;
+      break;
+   case TGSI_WRITEMASK_XYZW:
+      components = 4;
+      break;
+   default:
+      assert(0);
+      components = 0;
+      break;
+   }
+
+   ureg_DECL_output_array(ureg, &dst,
+                          semantic_name, semantic_index,
+                          1, components);
+   return dst;
 }
 
 
@@ -1336,6 +1476,87 @@ static void emit_decl_range( struct ureg_program *ureg,
    out[1].decl_range.Last = first + count - 1;
 }
 
+static void emit_decl_semantic_array(struct ureg_program *ureg,
+                                     unsigned file,
+                                     unsigned first, unsigned last,
+                                     unsigned semantic_name,
+                                     unsigned semantic_index,
+                                     unsigned usage_mask)
+{
+   union tgsi_any_token *out;
+   unsigned num;
+
+   num = (first == last) ? 4 : 3;
+   out = get_tokens(ureg, DOMAIN_DECL, num);
+
+   out[0].value = 0;
+   out[0].decl.Type = TGSI_TOKEN_TYPE_DECLARATION;
+   out[0].decl.NrTokens = num;
+   out[0].decl.File = file;
+   out[0].decl.UsageMask = usage_mask;
+   out[0].decl.Semantic = 1;
+   out[0].decl.Array = (num == 4);
+
+   out[1].value = 0;
+   out[1].decl_range.First = first;
+   out[1].decl_range.Last = last;
+
+   out[2].value = 0;
+   out[2].decl_semantic.Name = semantic_name;
+   out[2].decl_semantic.Index = semantic_index;
+
+   if (num == 4) {
+      out[0].decl.Array = 1;
+      out[3].value = 0;
+      out[3].array.ArrayID = first;
+   }
+}
+
+static void emit_decl_semantic_array_fs(struct ureg_program *ureg,
+                                        unsigned file,
+                                        unsigned first, unsigned last,
+                                        unsigned semantic_name,
+                                        unsigned semantic_index,
+                                        unsigned usage_mask,
+                                        unsigned interpolate,
+                                        boolean cylindrical_wrap,
+                                        boolean centroid)
+{
+   union tgsi_any_token *out;
+   unsigned num;
+
+   num = (first == last) ? 5 : 4;
+   out = get_tokens(ureg, DOMAIN_DECL, num);
+
+   out[0].value = 0;
+   out[0].decl.Type = TGSI_TOKEN_TYPE_DECLARATION;
+   out[0].decl.NrTokens = num;
+   out[0].decl.File = file;
+   out[0].decl.UsageMask = usage_mask;
+   out[0].decl.Semantic = 1;
+   out[0].decl.Interpolate = 1;
+   out[0].decl.Array = (num == 5);
+
+   out[1].value = 0;
+   out[1].decl_range.First = first;
+   out[1].decl_range.Last = last;
+
+   out[2].value = 0;
+   out[2].decl_interp.Interpolate = interpolate;
+   out[2].decl_interp.CylindricalWrap = cylindrical_wrap;
+   out[2].decl_interp.Centroid = centroid;
+
+   out[3].value = 0;
+   out[3].decl_semantic.Name = semantic_name;
+   out[3].decl_semantic.Index = semantic_index;
+
+   if (num == 5) {
+      out[0].decl.Array = 1;
+      out[4].value = 0;
+      out[4].array.ArrayID = first;
+   }
+}
+
 static void
 emit_decl_range2D(struct ureg_program *ureg,
                   unsigned file,
@@ -1485,30 +1706,35 @@ static void emit_decls( struct ureg_program *ureg )
    }
 
    if (ureg->processor == TGSI_PROCESSOR_VERTEX) {
-      for (i = 0; i < UREG_MAX_INPUT; i++) {
-         if (ureg->vs_inputs[i/32] & (1 << (i%32))) {
-            emit_decl_range( ureg, TGSI_FILE_INPUT, i, 1 );
-         }
+
+      for (i = 0; i < ureg->nr_vs_inputs; i++) {
+         emit_decl_range(ureg,
+                         TGSI_FILE_INPUT,
+                         ureg->vs_input[i].first_index,
+                         ureg->vs_input[i].index_count);
       }
    } else if (ureg->processor == TGSI_PROCESSOR_FRAGMENT) {
       for (i = 0; i < ureg->nr_fs_inputs; i++) {
-         emit_decl_fs(ureg,
-                      TGSI_FILE_INPUT,
-                      i,
-                      ureg->fs_input[i].semantic_name,
-                      ureg->fs_input[i].semantic_index,
-                      ureg->fs_input[i].interp,
-                      ureg->fs_input[i].cylindrical_wrap,
-                      ureg->fs_input[i].centroid);
+         emit_decl_semantic_array_fs(ureg,
+                                     TGSI_FILE_INPUT,
+                                     ureg->fs_input[i].first_index,
+                                     ureg->fs_input[i].last_index,
+                                     ureg->fs_input[i].semantic_name,
+                                     ureg->fs_input[i].semantic_index,
+                                     ureg->fs_input[i].usage_mask,
+                                     ureg->fs_input[i].interp,
+                                     ureg->fs_input[i].cylindrical_wrap,
+                                     ureg->fs_input[i].centroid);
       }
    } else {
       for (i = 0; i < ureg->nr_gs_inputs; i++) {
-         emit_decl_semantic(ureg,
-                            TGSI_FILE_INPUT,
-                            ureg->gs_input[i].index,
-                            ureg->gs_input[i].semantic_name,
-                            ureg->gs_input[i].semantic_index,
-                            TGSI_WRITEMASK_XYZW);
+         emit_decl_semantic_array(ureg,
+                                  TGSI_FILE_INPUT,
+                                  ureg->gs_input[i].first_index,
+                                  ureg->gs_input[i].last_index,
+                                  ureg->gs_input[i].semantic_name,
+                                  ureg->gs_input[i].semantic_index,
+                                  ureg->gs_input[i].usage_mask);
       }
    }
 
@@ -1522,12 +1748,13 @@ static void emit_decls( struct ureg_program *ureg )
    }
 
    for (i = 0; i < ureg->nr_outputs; i++) {
-      emit_decl_semantic(ureg,
-                         TGSI_FILE_OUTPUT,
-                         i,
-                         ureg->output[i].semantic_name,
-                         ureg->output[i].semantic_index,
-                         ureg->output[i].usage_mask);
+      emit_decl_semantic_array(ureg,
+                               TGSI_FILE_OUTPUT,
+                               ureg->output[i].first_index,
+                               ureg->output[i].last_index,
+                               ureg->output[i].semantic_name,
+                               ureg->output[i].semantic_index,
+                               ureg->output[i].usage_mask);
    }
 
    for (i = 0; i < ureg->nr_samplers; i++) {

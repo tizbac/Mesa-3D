@@ -1818,6 +1818,19 @@ of TGSI_FILE.
 
 UsageMask field specifies which of the register components can be accessed
 and is one of TGSI_WRITEMASK.
+For TGSI_FILE_INPUT/OUTPUT arrays, this specifies the size of an array element,
+and is restricted to TGSI_WRITEMASK_{X,XY,XYZ,XYZW}.
+If PIPE_CAP_TGSI_SCALAR_REGISTERS is supported, a single semantic index may be
+shared by up to 4 declared components in the same array, for instance:
+
+OUT[0..3].x, GENERIC[0]
+OUT[4].xy, GENERIC[1]
+OUT[5].xy, GENERIC[2]
+OUT[6..9].xy, GENERIC[3]
+OUT[8], GENERIC[5]
+
+This allows drivers to pack varyings and use the semantic index as location
+qualifier for linkage.
 
 The Local flag specifies that a given value isn't intended for
 subroutine parameter passing and, as a result, the implementation

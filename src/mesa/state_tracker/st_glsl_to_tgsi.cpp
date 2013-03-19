@@ -98,6 +98,49 @@ class st_dst_reg;
 
 static int swizzle_for_size(int size);
 
+static const char *varying_slot_names[] =
+{
+   "POS",
+   "COL0",
+   "COL1",
+   "FOGC",
+   "TEX0",
+   "TEX1",
+   "TEX2",
+   "TEX3",
+   "TEX4",
+   "TEX5",
+   "TEX6",
+   "TEX7",
+   "PSIZ",
+   "BFC0",
+   "BFC1",
+   "EDGE",
+   "CLIP_VERTEX",
+   "CLIP_DIST0",
+   "CLIP_DIST1",
+   "PRIMITIVE_ID",
+   "LAYER",
+   "FACE",
+   "PNTC",
+   "VAR0",
+   "VAR1",
+   "VAR2",
+   "VAR3",
+   "VAR4",
+   "VAR5",
+   "VAR6",
+   "VAR7",
+   "VAR8",
+   "VAR9",
+   "VAR10",
+   "VAR11",
+   "VAR12",
+   "VAR13",
+   "VAR14",
+   "VAR15",
+};
+
 /**
  * This struct is a corresponding struct to TGSI ureg_src.
  */
@@ -216,6 +259,18 @@ st_dst_reg::st_dst_reg(st_src_reg reg)
    this->reladdr = reg.reladdr;
 }
 
+/*
+ * Maps an ir_variable to a TGSI input/output (or array of inputs/outputs).
+ */
+struct st_input_output {
+   uint16_t index_count;    /**< array size */
+   uint8_t  components;     /**< number of vector components (1 - 4) */
+   uint8_t  semantic_name;  /**< TGSI_SEMANTIC_* */
+   uint16_t semantic_index; /**< base semantic index */
+   uint8_t  interp_mode;    /**< TGSI_INTERPOLATE_* */
+   boolean  centroid;
+};
+
 class glsl_to_tgsi_instruction : public exec_node {
 public:
    /* Callers of this ralloc-based new need not call delete. It's
@@ -330,6 +385,12 @@ public:
    int glsl_version;
    bool native_integers;
    bool have_sqrt;
+
+   bool write_all_colors;
+
+   bool use_texcoord;
+   struct st_input_output inputs[VARYING_SLOT_MAX];
+   struct st_input_output outputs[VARYING_SLOT_MAX];
 
    variable_storage *find_variable_storage(ir_variable *var);
 
@@ -1046,6 +1107,124 @@ glsl_to_tgsi_visitor::find_variable_storage(ir_variable *var)
    return NULL;
 }
 
+static unsigned st_translate_interp(enum glsl_interp_qualifier q, bool is_color)
+{
+   switch (q) {
+   case INTERP_QUALIFIER_NONE:
+      return is_color ? TGSI_INTERPOLATE_COLOR : TGSI_INTERPOLATE_PERSPECTIVE;
+   case INTERP_QUALIFIER_SMOOTH:
+      return TGSI_INTERPOLATE_PERSPECTIVE;
+   case INTERP_QUALIFIER_NOPERSPECTIVE:
+      return TGSI_INTERPOLATE_LINEAR;
+   case INTERP_QUALIFIER_FLAT:
+      return TGSI_INTERPOLATE_CONSTANT;
+   default:
+      assert(!"unexpected glsl_interp_qualifier");
+      return TGSI_INTERPOLATE_PERSPECTIVE;
+   }
+}
+
+static unsigned st_varying_location_to_semantic_name(int location, bool tc)
+{
+   if (tc) {
+      if (location == VARYING_SLOT_PNTC)
+         return TGSI_SEMANTIC_PCOORD;
+      if (location >= VARYING_SLOT_TEX0 &&
+          location <= VARYING_SLOT_TEX7)
+         return TGSI_SEMANTIC_TEXCOORD;
+   }
+
+   switch (location) {
+   case VARYING_SLOT_POS:
+      return TGSI_SEMANTIC_POSITION;
+   case VARYING_SLOT_COL0:
+   case VARYING_SLOT_COL1:
+      return TGSI_SEMANTIC_COLOR;
+   case VARYING_SLOT_BFC0:
+   case VARYING_SLOT_BFC1:
+      return TGSI_SEMANTIC_BCOLOR;
+   case VARYING_SLOT_CLIP_DIST0:
+   case VARYING_SLOT_CLIP_DIST1:
+      return TGSI_SEMANTIC_CLIPDIST;
+   case VARYING_SLOT_CLIP_VERTEX:
+      return TGSI_SEMANTIC_CLIPVERTEX;
+   case VARYING_SLOT_EDGE:
+      return TGSI_SEMANTIC_EDGEFLAG;
+   case VARYING_SLOT_PSIZ:
+      return TGSI_SEMANTIC_PSIZE;
+   case VARYING_SLOT_FACE:
+      return TGSI_SEMANTIC_FACE;
+   case VARYING_SLOT_PRIMITIVE_ID:
+      return TGSI_SEMANTIC_PRIMID;
+   case VARYING_SLOT_LAYER:
+      assert(0);
+      return 0; /* XXX */
+   case VARYING_SLOT_FOGC:
+      return TGSI_SEMANTIC_FOG;
+   default:
+      return TGSI_SEMANTIC_GENERIC;
+   }
+}
+
+static unsigned st_varying_location_to_semantic_index(int location, bool tc)
+{
+   if (tc) {
+      if (location == VARYING_SLOT_PNTC)
+         return 0;
+      if (location >= VARYING_SLOT_VAR0)
+         return location - VARYING_SLOT_VAR0;
+   }
+
+   switch (location) {
+   case VARYING_SLOT_POS:
+   case VARYING_SLOT_COL0:
+   case VARYING_SLOT_BFC0:
+   case VARYING_SLOT_CLIP_DIST0:
+   case VARYING_SLOT_CLIP_VERTEX:
+   case VARYING_SLOT_EDGE:
+   case VARYING_SLOT_PSIZ:
+   case VARYING_SLOT_FACE:
+   case VARYING_SLOT_PRIMITIVE_ID:
+   case VARYING_SLOT_LAYER:
+   case VARYING_SLOT_FOGC:
+      return 0;
+   case VARYING_SLOT_COL1:
+   case VARYING_SLOT_BFC1:
+   case VARYING_SLOT_CLIP_DIST1:
+      return 1;
+   default:
+      /* Drivers may allocated fixed slots or identifiers with a limited range
+       * based on semantic index, therefore we should not use arbitrarily high
+       * values here.
+       */
+      if (location >= VARYING_SLOT_TEX0 &&
+          location <= VARYING_SLOT_TEX7)
+         return location - VARYING_SLOT_TEX0;
+      if (location == VARYING_SLOT_PNTC)
+         return 8;
+      assert(location >= VARYING_SLOT_VAR0);
+      return location - VARYING_SLOT_VAR0 + 9;
+   }
+}
+
+// TGSI has arrays of vectors, but no more complex types.
+static void st_type_to_vector_array(unsigned &components,
+                                    unsigned &length,
+                                    const struct glsl_type *type)
+{
+   length = 1;
+
+   if (type->is_array()) {
+      length = type->array_size();
+      type = type->fields.array;
+   }
+
+   if (type->is_matrix())
+      length *= type->matrix_columns;
+
+   components = type->vector_elements;
+}
+
 void
 glsl_to_tgsi_visitor::visit(ir_variable *ir)
 {
@@ -1054,6 +1233,73 @@ glsl_to_tgsi_visitor::visit(ir_variable *ir)
 
       fp->OriginUpperLeft = ir->origin_upper_left;
       fp->PixelCenterInteger = ir->pixel_center_integer;
+   }
+
+   if (ir->mode == ir_var_shader_in || ir->mode == ir_var_shader_out) {
+      bool is_vert_attrib;
+      bool is_frag_result;
+      unsigned index_count;
+      unsigned components;
+      struct st_input_output *io;
+
+      assert((unsigned)ir->location < Elements(inputs));
+
+      st_type_to_vector_array(components, index_count, ir->type);
+
+      if (ir->mode == ir_var_shader_in) {
+         io = &inputs[ir->location];
+         is_vert_attrib = prog->Target == GL_VERTEX_PROGRAM_ARB;
+         is_frag_result = false;
+      } else {
+         io = &outputs[ir->location];
+         is_vert_attrib = false;
+         is_frag_result = prog->Target == GL_FRAGMENT_PROGRAM_ARB;
+      }
+      io->index_count = index_count;
+      io->components = components;
+
+      if (is_vert_attrib) {
+         io->semantic_name = TGSI_SEMANTIC_GENERIC;
+         io->semantic_index = ir->location;
+         io->components = 4;
+      } else
+      if (is_frag_result) {
+         switch (ir->location) {
+         case FRAG_RESULT_DEPTH:
+            io->semantic_name = TGSI_SEMANTIC_POSITION;
+            io->semantic_index = 0;
+            break;
+         case FRAG_RESULT_STENCIL:
+            io->semantic_name = TGSI_SEMANTIC_STENCIL;
+            io->semantic_index = 0;
+            break;
+         case FRAG_RESULT_COLOR:
+            io->semantic_name = TGSI_SEMANTIC_COLOR;
+            io->semantic_index = 0;
+            write_all_colors = TRUE;
+            break;
+         default:
+            assert(ir->location >= FRAG_RESULT_DATA0 &&
+                   ir->location <  FRAG_RESULT_MAX);
+            io->semantic_name = TGSI_SEMANTIC_COLOR;
+            io->semantic_index = ir->location - FRAG_RESULT_DATA0 + ir->index;
+            break;
+         }
+         io->components = 4;
+      } else {
+         const bool is_color_varying =
+            io->semantic_name == TGSI_SEMANTIC_COLOR ||
+            io->semantic_name == TGSI_SEMANTIC_BCOLOR;
+         io->semantic_name =
+            st_varying_location_to_semantic_name(ir->location, use_texcoord);
+         io->semantic_index =
+            st_varying_location_to_semantic_index(ir->location, use_texcoord);
+         io->interp_mode =
+            st_translate_interp((glsl_interp_qualifier)ir->interpolation,
+                                is_color_varying);
+         io->centroid = ir->centroid;
+      }
+
    }
 
    if (ir->mode == ir_var_uniform && strncmp(ir->name, "gl_", 3) == 0) {
@@ -2999,6 +3245,10 @@ glsl_to_tgsi_visitor::glsl_to_tgsi_visitor()
    prog = NULL;
    shader_program = NULL;
    options = NULL;
+   write_all_colors = false;
+   use_texcoord = false;
+   memset(inputs, 0, sizeof(inputs));
+   memset(outputs, 0, sizeof(outputs));
 }
 
 glsl_to_tgsi_visitor::~glsl_to_tgsi_visitor()
@@ -4023,8 +4273,8 @@ struct st_translate {
    struct ureg_dst arrays[MAX_ARRAYS];
    struct ureg_src *constants;
    struct ureg_src *immediates;
-   struct ureg_dst outputs[PIPE_MAX_SHADER_OUTPUTS];
-   struct ureg_src inputs[PIPE_MAX_SHADER_INPUTS];
+   struct ureg_dst outputs[VARYING_SLOT_MAX];
+   struct ureg_src inputs[VARYING_SLOT_MAX];
    struct ureg_dst address[1];
    struct ureg_src samplers[PIPE_MAX_SAMPLERS];
    struct ureg_src systemValues[SYSTEM_VALUE_MAX];
@@ -4170,6 +4420,8 @@ dst_register(struct st_translate *t,
                                    (int)(index & 0xFFFF) - 0x8000);
 
    case PROGRAM_OUTPUT:
+      debug_printf("PROGRAM_OUTPUT: outputMapping[%u] == %u\n",
+                   index, t->outputMapping[index]);
       if (t->procType == TGSI_PROCESSOR_VERTEX)
          assert(index < VARYING_SLOT_MAX);
       else if (t->procType == TGSI_PROCESSOR_FRAGMENT)
@@ -4665,13 +4917,13 @@ st_translate_program(
    glsl_to_tgsi_visitor *program,
    const struct gl_program *proginfo,
    GLuint numInputs,
-   const GLuint inputMapping[],
+   const GLuint inputMappingUnused[],
    const ubyte inputSemanticName[],
    const ubyte inputSemanticIndex[],
    const GLuint interpMode[],
    const GLboolean is_centroid[],
    GLuint numOutputs,
-   const GLuint outputMapping[],
+   const GLuint outputMappingUnused[],
    const ubyte outputSemanticName[],
    const ubyte outputSemanticIndex[],
    boolean passthrough_edgeflags,
@@ -4680,6 +4932,14 @@ st_translate_program(
    struct st_translate *t;
    unsigned i;
    enum pipe_error ret = PIPE_OK;
+
+   GLuint inputMapping[VARYING_SLOT_MAX];
+   GLuint outputMapping[VARYING_SLOT_MAX];
+
+   memset(inputMapping, ~0, sizeof(inputMapping));
+   memset(outputMapping, ~0, sizeof(inputMapping));
+
+   debug_printf("%s\n", __FUNCTION__);
 
    assert(numInputs <= Elements(t->inputs));
    assert(numOutputs <= Elements(t->outputs));
@@ -4706,6 +4966,71 @@ st_translate_program(
       }
    }
 
+#if 1
+   /*
+    * Declare input attributes.
+    */
+   for (numInputs = 0, i = 0; i < Elements(program->inputs); ++i) {
+      if (!program->inputs[i].index_count)
+         continue;
+
+      if (procType == TGSI_PROCESSOR_FRAGMENT) {
+         ureg_DECL_fs_input_array(ureg, &t->inputs[numInputs],
+                                  program->inputs[i].semantic_name,
+                                  program->inputs[i].semantic_index,
+                                  program->inputs[i].index_count,
+                                  program->inputs[i].components,
+                                  program->inputs[i].interp_mode, FALSE,
+                                  program->inputs[i].centroid);
+      } else
+      if (procType == TGSI_PROCESSOR_GEOMETRY) {
+         ureg_DECL_gs_input_array(ureg, &t->inputs[numInputs],
+                                  program->inputs[i].semantic_name,
+                                  program->inputs[i].semantic_index,
+                                  program->inputs[i].index_count,
+                                  program->inputs[i].components);
+      } else
+      if (procType == TGSI_PROCESSOR_VERTEX) {
+         ureg_DECL_vs_input_array(ureg, &t->inputs[numInputs],
+                                  program->inputs[i].semantic_index,
+                                  program->inputs[i].index_count);
+      }
+
+      inputMapping[i] = numInputs;
+      numInputs += program->inputs[i].index_count;
+   }
+
+   /*
+    * Declare output attributes.
+    */
+   for (numOutputs = 0, i = 0; i < Elements(program->outputs); ++i) {
+      if (!program->outputs[i].index_count)
+         continue;
+
+      ureg_DECL_output_array(ureg, &t->outputs[numOutputs],
+                             program->outputs[i].semantic_name,
+                             program->outputs[i].semantic_index,
+                             program->outputs[i].index_count,
+                             program->outputs[i].components);
+      debug_printf("OUT[%u..%u]: S%u[%u] SLOT%u, comps %u\n",
+                   numOutputs, numOutputs + program->outputs[i].index_count - 1,
+                   program->outputs[i].semantic_name,
+                   program->outputs[i].semantic_index, i,
+                   program->outputs[i].components);
+
+      if (procType == TGSI_PROCESSOR_FRAGMENT) {
+         debug_printf("FP position out\n");
+         const unsigned n = numOutputs;
+         if (program->outputs[i].semantic_name == TGSI_SEMANTIC_POSITION)
+            t->outputs[n] = ureg_writemask(t->outputs[n], TGSI_WRITEMASK_Z);
+         if (program->outputs[i].semantic_name == TGSI_SEMANTIC_STENCIL)
+            t->outputs[n] = ureg_writemask(t->outputs[n], TGSI_WRITEMASK_Y);
+      }
+
+      outputMapping[i] = numOutputs;
+      numOutputs += program->outputs[i].index_count;
+   }
+#else
    /*
     * Declare input attributes.
     */
@@ -4786,6 +5111,7 @@ st_translate_program(
       if (passthrough_edgeflags)
          emit_edgeflags(t);
    }
+#endif
 
    /* Declare address register.
     */
@@ -4970,6 +5296,8 @@ get_mesa_program(struct gl_context *ctx,
    struct pipe_screen *pscreen = ctx->st->pipe->screen;
    unsigned ptarget;
 
+   debug_printf("%s\n", __FUNCTION__);
+
    switch (shader->Type) {
    case GL_VERTEX_SHADER:
       target = GL_VERTEX_PROGRAM_ARB;
@@ -5004,6 +5332,7 @@ get_mesa_program(struct gl_context *ctx,
    v->options = options;
    v->glsl_version = ctx->Const.GLSLVersion;
    v->native_integers = ctx->Const.NativeIntegers;
+   v->use_texcoord = st_context(ctx)->needs_texcoord_semantic;
 
    v->have_sqrt = pscreen->get_shader_param(pscreen, ptarget,
                                             PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED);

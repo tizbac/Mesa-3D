@@ -168,9 +168,10 @@ struct tgsi_declaration_interp
 
 struct tgsi_declaration_semantic
 {
-   unsigned Name           : 8;  /**< one of TGSI_SEMANTIC_x */
-   unsigned Index          : 16; /**< UINT */
-   unsigned Padding        : 8;
+   unsigned Name        : 8;  /**< one of TGSI_SEMANTIC_x */
+   unsigned Index       : 16; /**< UINT */
+   unsigned Component   : 3;  /**< xyzw, see PIPE_CAP_TGSI_SCALAR_REGISTERS */
+   unsigned Padding     : 5;
 };
 
 struct tgsi_declaration_resource {

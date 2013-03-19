@@ -178,6 +178,17 @@ ureg_property_fs_depth_layout(struct ureg_program *ureg,
  * Build shader declarations:
  */
 
+boolean
+ureg_DECL_fs_input_array(struct ureg_program *,
+                         struct ureg_src *,
+                         unsigned semantic_name,
+                         unsigned semantic_index,
+                         unsigned element_count,
+                         unsigned element_components,
+                         unsigned interp_mode,
+                         boolean cylindrical_wrap,
+                         boolean centroid);
+
 struct ureg_src
 ureg_DECL_fs_input_cyl_centroid(struct ureg_program *,
                        unsigned semantic_name,
@@ -214,13 +225,26 @@ ureg_DECL_fs_input(struct ureg_program *ureg,
                                  0, 0);
 }
 
+boolean
+ureg_DECL_vs_input_array(struct ureg_program *,
+                         struct ureg_src *,
+                         unsigned first_index,
+                         unsigned element_count);
+
 struct ureg_src
 ureg_DECL_vs_input( struct ureg_program *,
                     unsigned index );
 
+boolean
+ureg_DECL_gs_input_array(struct ureg_program *,
+                         struct ureg_src *,
+                         unsigned semantic_name,
+                         unsigned semantic_index,
+                         unsigned element_count,
+                         unsigned element_components);
+
 struct ureg_src
 ureg_DECL_gs_input(struct ureg_program *,
-                   unsigned index,
                    unsigned semantic_name,
                    unsigned semantic_index);
 
@@ -229,6 +253,14 @@ ureg_DECL_system_value(struct ureg_program *,
                        unsigned index,
                        unsigned semantic_name,
                        unsigned semantic_index);
+
+boolean
+ureg_DECL_output_array(struct ureg_program *,
+                       struct ureg_dst *,
+                       unsigned semantic_name,
+                       unsigned semantic_index,
+                       unsigned element_count,
+                       unsigned element_components);
 
 struct ureg_dst
 ureg_DECL_output_masked( struct ureg_program *,

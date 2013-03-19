@@ -166,6 +166,7 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 	case PIPE_CAP_USER_CONSTANT_BUFFERS:
 		return 1;
 	case PIPE_CAP_TGSI_TEXCOORD:
+	case PIPE_CAP_TGSI_SCALAR_REGISTERS:
 		return 0;
 
 	case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:

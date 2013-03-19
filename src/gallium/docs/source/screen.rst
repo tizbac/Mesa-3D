@@ -145,6 +145,14 @@ The integer capabilities:
   TEXCOORD semantic.
   Also, TGSI_SEMANTIC_PCOORD becomes available, which labels a fragment shader
   input that will always be replaced with sprite coordinates.
+* ``PIPE_CAP_TGSI_SCALAR_REGISTERS``:
+  If true, the driver supports declaring a scalar array instead of a vec4
+  to be able index individual components naturally, i.e. without having resort
+  to sequences like
+  IF      ((index & 3) == 0): access x component
+  ELSE IF ((index & 3) == 1): access y component, etc.
+  If a scalar arrays has semantic information, its semantic index will increase
+  only by 1 for every 4 components.
 
 
 .. _pipe_capf:

@@ -1096,7 +1096,6 @@ st_translate_mesa_program(
    else if (procType == TGSI_PROCESSOR_GEOMETRY) {
       for (i = 0; i < numInputs; i++) {
          t->inputs[i] = ureg_DECL_gs_input(ureg,
-                                           i,
                                            inputSemanticName[i],
                                            inputSemanticIndex[i]);
       }
