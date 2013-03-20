@@ -466,6 +466,90 @@ nvc0_validate_derived_1(struct nvc0_context *nvc0)
    }
 }
 
+#ifdef NOUVEAU_MULTICRAPPING
+static void
+nvc0_ctx_state_save(struct nvc0_context *nvc0)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   unsigned i;
+
+   IMMED_NVC0(push, SUBC_3D(NV50_GRAPH_SERIALIZE), 0);
+
+   for (i = 0; i < nvc0->num_tfbbufs; ++i) {
+      if (!nvc0->tfbbuf[i])
+         continue;
+      nvc0_so_target_save_offset(pipe, nvc0->tfbbuf[i], i, FALSE);
+      nvc0->tfbbuf_dirty |= 1 << i;
+   }
+}
+
+static void
+nvc0_ctx_state_restore(struct nvc0_context *nvc0)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   uint32_t dirty = ~0;
+   unsigned s, i;
+
+   nvc0->base.pipe->render_condition(nvc0->cond_query,
+                                     PIPE_RENDER_COND_NO_WAIT);
+
+   BEGIN_NVC0(push, NVC0_3D(CODE_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, nvc0->text->offset);
+   PUSH_DATA (push, nvc0->text->offset);
+
+   BEGIN_NVC0(push, NVC0_3D(TIC_ADDRESS_HIGH), 3);
+   PUSH_DATAh(push, nvc0->texcfg->offset);
+   PUSH_DATA (push, nvc0->texcfg->offset);
+   PUSH_DATA (push, NVC0_TIC_MAX_ENTRIES - 1);
+   BEGIN_NVC0(push, NVC0_3D(TSC_ADDRESS_HIGH), 3);
+   PUSH_DATAh(push, nvc0->texcfg->offset + 65536);
+   PUSH_DATA (push, nvc0->texcfg->offset + 65536);
+   PUSH_DATA (push, NVC0_TSC_MAX_ENTRIES - 1);
+
+   IMMED_NVC0(push, NVC0_3D(RASTERIZE_ENABLE), !nvc0->state.rasterizer_discard);
+
+   BEGIN_NVC0(push, NVC0_3D(SCISSOR_HORIZ(0)), 2);
+   if (nvc0->state.scissor) {
+      PUSH_DATA (push, (nvc0->scissor.maxx << 16) | nvc0->scissor.minx);
+      PUSH_DATA (push, (nvc0->scissor.maxy << 16) | nvc0->scissor.miny);
+   } else {
+      PUSH_DATA (push, (0xffff << 16) | 0);
+      PUSH_DATA (push, (0xffff << 16) | 0);
+   }
+
+   IMMED_NVC0(push, NVC0_3D(FORCE_EARLY_FRAGMENT_TESTS),
+              nvc0->state.early_z_forced);
+
+   IMMED_NVC0(push, NVC0_3D(CLIP_DISTANCE_ENABLE), nvc0->state.clip_enable);
+
+   BEGIN_NVC0(push, NVC0_3D(VB_ELEMENT_BASE), 1);
+   PUSH_DATA (push, nvc0->state.index_bias);
+
+   nvc0->state.prim_restart = FALSE;
+   IMMED_NVC0(push, NVC0_3D(PRIM_RESTART_ENABLE), 0);
+
+   BEGIN_NVC0(push, NVC0_3D(MACRO_VERTEX_ARRAY_PER_INSTANCE), 1);
+   PUSH_DATA (push, nvc0->state.num_vtxelts);
+   PUSH_DATA (push, nvc0->state.instance_elts);
+
+   if (!nvc0->rast)          dirty &= ~(NVC0_NEW_RASTERIZER | NVC0_NEW_SCISSOR);
+   if (!nvc0->blend)         dirty &= ~NVC0_NEW_BLEND;
+   if (!nvc0->zsa)           dirty &= ~NVC0_NEW_ZSA;
+   if (!nvc0->vertprog)      dirty &= ~NVC0_NEW_VERTPROG;
+   if (!nvc0->fragprog)      dirty &= ~NVC0_NEW_FRAGPROG;
+   if (!nvc0->idxbuf.buffer) dirty &= ~NVC0_NEW_IDXBUF;
+   if (!nvc0->vertex)        dirty &= ~(NVC0_NEW_VERTEX | NVC0_NEW_ARRAYS);
+
+   for (s = 0; s < 6; ++s) {
+      nvc0->textures_dirty[s] = (1ULL << nvc0->num_textures[s]) - 1;
+      nvc0->samplers_dirty[s] = (1ULL << nvc0->num_samplers[s]) - 1;
+   }
+   nvc0->dirty = dirty;
+
+   nvc0_state_validate(nvc0, ~0, 0);
+}
+#endif
+
 static void
 nvc0_switch_pipe_context(struct nvc0_context *ctx_to)
 {
