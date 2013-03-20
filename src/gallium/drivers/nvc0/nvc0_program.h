@@ -18,6 +18,7 @@ struct nvc0_transform_feedback_state {
 
 struct nvc0_program {
    struct pipe_shader_state pipe;
+   nouveau_id_t id;
 
    ubyte type;
    boolean translated;

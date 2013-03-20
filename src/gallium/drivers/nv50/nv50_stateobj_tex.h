@@ -5,7 +5,7 @@
 #include "pipe/p_state.h"
 
 struct nv50_tsc_entry {
-   int id;
+   nouveau_id_t id;
    uint32_t tsc[8];
 };
 
@@ -17,7 +17,7 @@ nv50_tsc_entry(void *hwcso)
 
 struct nv50_tic_entry {
    struct pipe_sampler_view pipe;
-   int id;
+   nouveau_id_t id;
    uint32_t tic[8];
 };
 
