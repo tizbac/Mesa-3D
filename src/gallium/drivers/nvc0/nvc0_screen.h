@@ -62,8 +62,6 @@ struct nvc0_screen {
       uint32_t *map;
    } fence;
 
-   struct nouveau_mman *mm_VRAM_fe0;
-
    struct nouveau_object *eng3d; /* sqrt(1/2)|kepler> + sqrt(1/2)|fermi> */
    struct nouveau_object *eng2d;
    struct nouveau_object *m2mf;

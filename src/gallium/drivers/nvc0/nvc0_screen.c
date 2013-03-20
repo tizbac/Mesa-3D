@@ -360,8 +360,6 @@ nvc0_screen_destroy(struct pipe_screen *pscreen)
 
    FREE(screen->tic.entries);
 
-   nouveau_mm_destroy(screen->mm_VRAM_fe0);
-
    nouveau_object_del(&screen->eng3d);
    nouveau_object_del(&screen->eng2d);
    nouveau_object_del(&screen->m2mf);
@@ -862,10 +860,6 @@ nvc0_screen_create(struct nouveau_device *dev)
 
    screen->tic.entries = CALLOC(4096, sizeof(void *));
    screen->tsc.entries = screen->tic.entries + 2048;
-
-   mm_config.nvc0.tile_mode = 0;
-   mm_config.nvc0.memtype = 0xfe0;
-   screen->mm_VRAM_fe0 = nouveau_mm_create(dev, NOUVEAU_BO_VRAM, &mm_config);
 
    if (!nvc0_blitter_create(screen))
       goto fail;
