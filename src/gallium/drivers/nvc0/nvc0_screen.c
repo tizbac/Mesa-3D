@@ -854,37 +854,3 @@ fail:
    nvc0_screen_destroy(pscreen);
    return NULL;
 }
-
-int
-nvc0_screen_tic_alloc(struct nvc0_screen *screen, void *entry)
-{
-   int i = screen->tic.next;
-
-   while (screen->tic.lock[i / 32] & (1 << (i % 32)))
-      i = (i + 1) & (NVC0_TIC_MAX_ENTRIES - 1);
-
-   screen->tic.next = (i + 1) & (NVC0_TIC_MAX_ENTRIES - 1);
-
-   if (screen->tic.entries[i])
-      nv50_tic_entry(screen->tic.entries[i])->id = -1;
-
-   screen->tic.entries[i] = entry;
-   return i;
-}
-
-int
-nvc0_screen_tsc_alloc(struct nvc0_screen *screen, void *entry)
-{
-   int i = screen->tsc.next;
-
-   while (screen->tsc.lock[i / 32] & (1 << (i % 32)))
-      i = (i + 1) & (NVC0_TSC_MAX_ENTRIES - 1);
-
-   screen->tsc.next = (i + 1) & (NVC0_TSC_MAX_ENTRIES - 1);
-
-   if (screen->tsc.entries[i])
-      nv50_tsc_entry(screen->tsc.entries[i])->id = -1;
-
-   screen->tsc.entries[i] = entry;
-   return i;
-}

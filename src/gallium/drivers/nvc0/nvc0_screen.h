@@ -42,18 +42,6 @@ struct nvc0_screen {
    struct nvc0_blitter *blitter;
 
    struct {
-      void **entries;
-      int next;
-      uint32_t lock[NVC0_TIC_MAX_ENTRIES / 32];
-   } tic;
-   
-   struct {
-      void **entries;
-      int next;
-      uint32_t lock[NVC0_TSC_MAX_ENTRIES / 32];
-   } tsc;
-
-   struct {
       struct nouveau_bo *bo;
       uint32_t *map;
    } fence;
@@ -81,9 +69,6 @@ boolean nvc0_blitter_create(struct nvc0_screen *);
 void nvc0_blitter_destroy(struct nvc0_screen *);
 
 void nvc0_screen_make_buffers_resident(struct nvc0_screen *);
-
-int nvc0_screen_tic_alloc(struct nvc0_screen *, void *);
-int nvc0_screen_tsc_alloc(struct nvc0_screen *, void *);
 
 int nve4_screen_compute_setup(struct nvc0_screen *, struct nouveau_pushbuf *);
 
@@ -121,37 +106,5 @@ struct nvc0_format {
 };
 
 extern const struct nvc0_format nvc0_format_table[];
-
-static INLINE void
-nvc0_screen_tic_unlock(struct nvc0_screen *screen, struct nv50_tic_entry *tic)
-{
-   if (tic->id >= 0)
-      screen->tic.lock[tic->id / 32] &= ~(1 << (tic->id % 32));
-}
-
-static INLINE void
-nvc0_screen_tsc_unlock(struct nvc0_screen *screen, struct nv50_tsc_entry *tsc)
-{
-   if (tsc->id >= 0)
-      screen->tsc.lock[tsc->id / 32] &= ~(1 << (tsc->id % 32));
-}
-
-static INLINE void
-nvc0_screen_tic_free(struct nvc0_screen *screen, struct nv50_tic_entry *tic)
-{
-   if (tic->id >= 0) {
-      screen->tic.entries[tic->id] = NULL;
-      screen->tic.lock[tic->id / 32] &= ~(1 << (tic->id % 32));
-   }
-}
-
-static INLINE void
-nvc0_screen_tsc_free(struct nvc0_screen *screen, struct nv50_tsc_entry *tsc)
-{
-   if (tsc->id >= 0) {
-      screen->tsc.entries[tsc->id] = NULL;
-      screen->tsc.lock[tsc->id / 32] &= ~(1 << (tsc->id % 32));
-   }
-}
 
 #endif
