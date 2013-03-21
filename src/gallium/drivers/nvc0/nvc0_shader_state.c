@@ -66,7 +66,7 @@ nvc0_program_update_context_state(struct nvc0_context *nvc0,
 static INLINE boolean
 nvc0_program_validate(struct nvc0_context *nvc0, struct nvc0_program *prog)
 {
-   if (prog->mem)
+   if (nvc0->text.mem[prog->id])
       return TRUE;
 
    if (!prog->translated) {
@@ -93,7 +93,7 @@ nvc0_vertprog_validate(struct nvc0_context *nvc0)
 
    BEGIN_NVC0(push, NVC0_3D(SP_SELECT(1)), 2);
    PUSH_DATA (push, 0x11);
-   PUSH_DATA (push, vp->code_base);
+   PUSH_DATA (push, nvc0->text.code_base[vp->id]);
    BEGIN_NVC0(push, NVC0_3D(SP_GPR_ALLOC(1)), 1);
    PUSH_DATA (push, vp->num_gprs);
 
@@ -118,7 +118,7 @@ nvc0_fragprog_validate(struct nvc0_context *nvc0)
 
    BEGIN_NVC0(push, NVC0_3D(SP_SELECT(5)), 2);
    PUSH_DATA (push, 0x51);
-   PUSH_DATA (push, fp->code_base);
+   PUSH_DATA (push, nvc0->text[fp->id].code_base);
    BEGIN_NVC0(push, NVC0_3D(SP_GPR_ALLOC(5)), 1);
    PUSH_DATA (push, fp->num_gprs);
 
@@ -142,7 +142,7 @@ nvc0_tctlprog_validate(struct nvc0_context *nvc0)
       }
       BEGIN_NVC0(push, NVC0_3D(SP_SELECT(2)), 2);
       PUSH_DATA (push, 0x21);
-      PUSH_DATA (push, tp->code_base);
+      PUSH_DATA (push, nvc0->text[tp->id].code_base);
       BEGIN_NVC0(push, NVC0_3D(SP_GPR_ALLOC(2)), 1);
       PUSH_DATA (push, tp->num_gprs);
 
@@ -169,7 +169,7 @@ nvc0_tevlprog_validate(struct nvc0_context *nvc0)
       BEGIN_NVC0(push, NVC0_3D(MACRO_TEP_SELECT), 1);
       PUSH_DATA (push, 0x31);
       BEGIN_NVC0(push, NVC0_3D(SP_START_ID(3)), 1);
-      PUSH_DATA (push, tp->code_base);
+      PUSH_DATA (push, nvc0->text.code_base[tp->id]);
       BEGIN_NVC0(push, NVC0_3D(SP_GPR_ALLOC(3)), 1);
       PUSH_DATA (push, tp->num_gprs);
    } else {
@@ -195,7 +195,7 @@ nvc0_gmtyprog_validate(struct nvc0_context *nvc0)
       BEGIN_NVC0(push, NVC0_3D(MACRO_GP_SELECT), 1);
       PUSH_DATA (push, 0x41);
       BEGIN_NVC0(push, NVC0_3D(SP_START_ID(4)), 1);
-      PUSH_DATA (push, gp->code_base);
+      PUSH_DATA (push, nvc0->text.code_base[gp->id]);
       BEGIN_NVC0(push, NVC0_3D(SP_GPR_ALLOC(4)), 1);
       PUSH_DATA (push, gp->num_gprs);
       BEGIN_NVC0(push, NVC0_3D(LAYER), 1);

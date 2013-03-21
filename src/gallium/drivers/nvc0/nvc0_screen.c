@@ -676,11 +676,6 @@ nvc0_screen_create(struct nouveau_device *dev)
 
    nvc0_magic_3d_init(push, screen->eng3d->oclass);
 
-   ret = nouveau_bo_new(dev, NOUVEAU_BO_VRAM, 1 << 17, 1 << 20, NULL,
-                        &screen->text);
-   if (ret)
-      goto fail;
-
    /* XXX: getting a page fault at the end of the code buffer every few
     *  launches, don't use the last 256 bytes to work around them - prefetch ?
     */
@@ -742,9 +737,6 @@ nvc0_screen_create(struct nouveau_device *dev)
    if (ret)
       goto fail;
 
-   BEGIN_NVC0(push, NVC0_3D(CODE_ADDRESS_HIGH), 2);
-   PUSH_DATAh(push, screen->text->offset);
-   PUSH_DATA (push, screen->text->offset);
    BEGIN_NVC0(push, NVC0_3D(TEMP_ADDRESS_HIGH), 4);
    PUSH_DATAh(push, screen->tls->offset);
    PUSH_DATA (push, screen->tls->offset);

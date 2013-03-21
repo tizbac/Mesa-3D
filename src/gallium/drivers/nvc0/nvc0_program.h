@@ -27,7 +27,6 @@ struct nvc0_program {
 
    uint32_t *code;
    uint32_t *immd_data;
-   unsigned code_base;
    unsigned code_size;
    unsigned immd_base;
    unsigned immd_size; /* size of immediate array data */
@@ -62,8 +61,6 @@ struct nvc0_program {
    void *relocs;
 
    struct nvc0_transform_feedback_state *tfb;
-
-   struct nouveau_heap *mem;
 };
 
 #endif

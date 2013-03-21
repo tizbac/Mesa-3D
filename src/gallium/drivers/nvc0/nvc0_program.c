@@ -674,7 +674,8 @@ nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
       size = size + (is_cp ? 0x40 : 0x70);
    size = align(size, 0x40);
 
-   ret = nouveau_heap_alloc(screen->text_heap, size, prog, &prog->mem);
+   ret = nouveau_heap_alloc(screen->text_heap, size, prog,
+                            &nvc0->progs[prog->id].mem);
    if (ret) {
       struct nouveau_heap *heap = screen->text_heap;
       struct nouveau_heap *iter;
@@ -718,8 +719,10 @@ nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
       code_pos = prog->code_base;
    }
 
-   if (prog->relocs)
+   if (prog->relocs) {
+      pipe_mutex_lock(nvc0->screen->locks.prog);
       nv50_ir_relocate_code(prog->relocs, prog->code, code_pos, lib_pos, 0);
+   }
 
 #ifdef DEBUG
    if (debug_get_bool_option("NV50_PROG_DEBUG", FALSE))
@@ -735,6 +738,9 @@ nvc0_program_upload_code(struct nvc0_context *nvc0, struct nvc0_program *prog)
       nvc0->base.push_data(&nvc0->base,
                            screen->text, prog->immd_base, NOUVEAU_BO_VRAM,
                            prog->immd_size, prog->immd_data);
+
+   if (prog->relocs)
+      pipe_mutex_unlock(nvc0->screen->locks.prog);
 
    BEGIN_NVC0(nvc0->base.pushbuf, NVC0_3D(MEM_BARRIER), 1);
    PUSH_DATA (nvc0->base.pushbuf, 0x1011);
@@ -775,8 +781,8 @@ nvc0_program_destroy(struct nvc0_context *nvc0, struct nvc0_program *prog)
    const struct pipe_shader_state pipe = prog->pipe;
    const ubyte type = prog->type;
 
-   if (prog->mem)
-      nouveau_heap_free(&prog->mem);
+   if (nvc0->progs[prog->id].mem)
+      nouveau_heap_free(&nvc0->progs[prog->id].mem);
 
    FREE(prog->code);
    FREE(prog->immd_data);

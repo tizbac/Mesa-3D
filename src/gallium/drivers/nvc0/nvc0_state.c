@@ -685,6 +685,7 @@ nvc0_sp_state_create(struct pipe_context *pipe,
    prog = CALLOC_STRUCT(nvc0_program);
    if (!prog)
       return NULL;
+   prog->id = nouveau_id_get_locked(&nvc0_context(pipe)->screen->ids.prog);
 
    prog->type = type;
 
@@ -703,6 +704,8 @@ nvc0_sp_state_delete(struct pipe_context *pipe, void *hwcso)
    struct nvc0_program *prog = (struct nvc0_program *)hwcso;
 
    nvc0_program_destroy(nvc0_context(pipe), prog);
+
+   nouveau_id_put_locked(&nvc0_context(pipe)->screen->ids.prog);
 
    FREE((void *)prog->pipe.tokens);
    FREE(prog);
@@ -765,6 +768,8 @@ nvc0_cp_state_create(struct pipe_context *pipe,
    prog = CALLOC_STRUCT(nvc0_program);
    if (!prog)
       return NULL;
+   prog->id = nouveau_id_get_locked(nvc0_context(pipe)->screen->ids.prog);
+
    prog->type = PIPE_SHADER_COMPUTE;
 
    prog->cp.smem_size = cso->req_local_mem;

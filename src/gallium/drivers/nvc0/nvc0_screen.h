@@ -31,7 +31,6 @@ struct nvc0_screen {
 
    int num_occlusion_queries_active;
 
-   struct nouveau_bo *text;
    struct nouveau_bo *parm;       /* for COMPUTE */
    struct nouveau_bo *uniform_bo; /* for 3D */
    struct nouveau_bo *tls;
@@ -66,6 +65,13 @@ struct nvc0_screen {
    struct nouveau_object *eng2d;
    struct nouveau_object *m2mf;
    struct nouveau_object *compute;
+
+   struct {
+      struct nouveau_ids prog;
+   } ids;
+   struct {
+      pipe_mutex prog;
+   } locks;
 };
 
 static INLINE struct nvc0_screen *

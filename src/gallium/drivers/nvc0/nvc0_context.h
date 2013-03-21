@@ -202,6 +202,7 @@ struct nvc0_context {
       struct nouveau_bo *bo;
       int *t_slot; /* nv50_tic_entry id -> local slot, dynamic size */
       int *s_slot; /* nv50_tsc_entry id -> local slot, dynamic size */
+      /* these are not in a struct to save space: */
       void **t_so; /* local slot -> nv50_tic_entry, fixed size */
       void **s_so; /* local slot -> nv50_tsc_entry, fixed size */
       uint8_t *t_ref; /* local slot bind count */
@@ -210,6 +211,7 @@ struct nvc0_context {
    struct {
       struct nouveau_bo *bo;
       struct nouveau_heap **mem; /* nv50_program id -> memory allocation */
+      uint32_t *code_base;
    } text;
 
 #ifdef NVC0_WITH_DRAW_MODULE

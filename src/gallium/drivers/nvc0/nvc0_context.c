@@ -217,6 +217,7 @@ struct pipe_context *
 nvc0_create(struct pipe_screen *pscreen, void *priv)
 {
    struct nvc0_screen *screen = nvc0_screen(pscreen);
+   struct nouveau_device *dev = screen->base.device;
    struct nvc0_context *nvc0;
    struct pipe_context *pipe;
    int ret;
@@ -240,6 +241,12 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    if (!ret)
       ret = nouveau_bufctx_new(screen->base.client, NVC0_BIND_CP_COUNT,
                                &nvc0->bufctx_cp);
+   if (ret)
+      goto out_err;
+
+   /* allocate buffers */
+   ret = nouveau_bo_new(dev, NOUVEAU_BO_VRAM, 1 << 17, 1 << 20, NULL,
+                        &nvc0->text.bo);
    if (ret)
       goto out_err;
 
@@ -322,6 +329,8 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
 
 out_err:
    if (nvc0) {
+      if (nvc0->text)
+         nouveau_bo_ref(NULL, &nvc0->text.bo);
       if (nvc0->bufctx_3d)
          nouveau_bufctx_del(&nvc0->bufctx_3d);
       if (nvc0->bufctx_cp)
@@ -333,6 +342,32 @@ out_err:
       FREE(nvc0);
    }
    return NULL;
+}
+
+void
+nvc0_tables_update_size(struct nvc0_context *nvc0)
+{
+   struct nvc0_screen *screen = nvc0->screen;
+   unsigned p, n;
+
+   if (nvc0->texcfg.tsc_max < screen->tsc_ids.max) {
+      nvc0->texcfg.tsc = REALLOC(nvc0->texcfg.tsc,
+                                 nvc0->texcfg.tsc_max * sizeof(nvc0->texcfg.foo));
+   }
+
+   p = screen->prog_ids.max;
+   n = nvc0->progs.max;
+   if (unlikely(p < n)) {
+      nvc0->progs.mem = REALLOC(nvc0->progs.mem,
+                                p * sizeof(struct nouveau_heap *),
+                                n * sizeof(struct nouveau_heap *));
+      memset(&nvc0->progs.mem[p], 0, (n - p) * sizeof(struct nouveau_heap *));
+   }
+   
+   screen->tsc_ids.max;
+   screen->tic_ids.max;
+   screen->resource_ids.max;
+   screen->prog_ids.max;
 }
 
 void

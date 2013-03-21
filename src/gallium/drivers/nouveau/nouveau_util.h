@@ -131,4 +131,28 @@ nouveau_id_free_locked(struct nouveau_ids *ids, nouveau_id_t id)
    pipe_mutex_unlock(ids->lock);
 }
 
+
+struct nouveau_ctxtab
+{
+   void *table;
+   unsigned length;
+};
+
+static INLINE const uint8_t *
+__nouveau_ctxtab_get(struct nouveau_ctxtab *tab, nouveau_id_t id,
+                     unsigned stride)
+{
+   if (unlikely(id >= tab->length)) {
+      tab->table = REALLOC(tab->table,
+                           tab->length * tab->stride,
+                           (id + 1) * tab->stride);
+      tab->length = id + 1;
+   }
+   return (tab->table + id * stride);
+}
+
+#define NOUVEAU_TABLE_GET(tab, ty, id, m) \
+   ((const ty *)__nouveau_ctxtab_get(tab, sizeof(ty), id))->m
+
+
 #endif /* __NOUVEAU_UTIL_H__ */
