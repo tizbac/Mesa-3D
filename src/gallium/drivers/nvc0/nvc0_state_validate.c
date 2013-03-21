@@ -521,6 +521,8 @@ nvc0_ctx_state_restore(struct nvc0_context *nvc0)
    IMMED_NVC0(push, NVC0_3D(FORCE_EARLY_FRAGMENT_TESTS),
               nvc0->state.early_z_forced);
 
+   BEGIN_NVC0(push, NVC0_3D(CLIP_DISTANCE_MODE), 1);
+   PUSH_DATA (push, nvc0->state.clip_mode);
    IMMED_NVC0(push, NVC0_3D(CLIP_DISTANCE_ENABLE), nvc0->state.clip_enable);
 
    BEGIN_NVC0(push, NVC0_3D(VB_ELEMENT_BASE), 1);
