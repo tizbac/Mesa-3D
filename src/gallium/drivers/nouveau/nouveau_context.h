@@ -10,6 +10,7 @@ struct nouveau_context {
    struct pipe_context pipe;
    struct nouveau_screen *screen;
 
+   struct nouveau_object *channel;
    struct nouveau_client *client;
    struct nouveau_pushbuf *pushbuf;
 
@@ -56,6 +57,63 @@ static INLINE struct nouveau_context *
 nouveau_context(struct pipe_context *pipe)
 {
    return (struct nouveau_context *)pipe;
+}
+
+#define NOUVEAU_CONTEXT_EXCLUSIVE_CHANNEL (1 << 0)
+#define NOUVEAU_CONTEXT_DEFERRED          (1 << 1)
+
+static INLINE int
+nouveau_context_init(struct nouveau_context *nv, uint32_t flags)
+{
+   const int immediate = !(flags & NOUVEAU_CONTEXT_DEFERRED);
+   int ret;
+
+   if (flags & NOUVEAU_CONTEXT_EXCLUSIVE_CHANNEL) {
+#ifdef NVE0_FIFO_ENGINE_GR
+      if (nv->chipset >= 0xe0) {
+         struct nve0_fifo data = { .engine = NVE0_FIFO_ENGINE_GR };
+         ret = nouveau_object_new(&nv->screen->device->object, 0,
+                                  NOUVEAU_FIFO_CHANNEL_CLASS,
+                                  &data, sizeof(data), &nv->channel);
+      } else
+#endif
+      if (nv->chipset >= 0xc0) {
+         struct nvc0_fifo data = { };
+         ret = nouveau_object_new(&nv->screen->device->object, 0,
+                                  NOUVEAU_FIFO_CHANNEL_CLASS,
+                                  &data, sizeof(data), &nv->channel);
+      } else
+      if (nv->chipset < 0xe0) {
+         struct nv04_fifo data = { .vram = 0xbeef0202, .gart = 0xbeef0202 };
+         ret = nouveau_object_new(&nv->screen->device->object, 0,
+                                  NOUVEAU_FIFO_CHANNEL_CLASS,
+                                  &data, sizeof(data), &nv->channel);
+      }
+      if (ret)
+         return ret;
+   } else {
+      nv->channel = nv->screen->channel;
+   }
+
+   ret = nouveau_client_new(nv->screen->device, &nv->client);
+   if (ret)
+      return ret;
+
+   ret = nouveau_pushbuf_new(nv->client, nv->channel, 4, 512 * 1024, immediate,
+                             &nv->pushbuf);
+   if (ret)
+      return ret;
+}
+
+static INLINE void
+nouveau_context_fini(struct nouveau_context *nv)
+{
+   if (nv->pushbuf)
+      nouveau_pushbuf_del(&nv->pushbuf);
+   if (nv->client)
+      nouveau_object_del(&nv->client);
+   if (nv->channel && nv->channel != nv->screen->channel)
+      nouveau_object_del(&nv->channel);
 }
 
 void

@@ -77,7 +77,7 @@ nvc0_query_allocate(struct nvc0_context *nvc0, struct nvc0_query *q, int size)
          return FALSE;
       q->offset = q->base;
 
-      ret = nouveau_bo_map(q->bo, 0, screen->base.client);
+      ret = nouveau_bo_map(q->bo, 0, nvc0->base.client);
       if (ret) {
          nvc0_query_allocate(nvc0, q, 0);
          return FALSE;
@@ -344,7 +344,7 @@ nvc0_query_result(struct pipe_context *pipe, struct pipe_query *pq,
    unsigned i;
 
    if (q->state != NVC0_QUERY_STATE_READY)
-      nvc0_query_update(nvc0->screen->base.client, q);
+      nvc0_query_update(nvc0->base.client, q);
 
    if (q->state != NVC0_QUERY_STATE_READY) {
       if (!wait) {
@@ -355,7 +355,7 @@ nvc0_query_result(struct pipe_context *pipe, struct pipe_query *pq,
          }
          return FALSE;
       }
-      if (nouveau_bo_wait(q->bo, NOUVEAU_BO_RD, nvc0->screen->base.client))
+      if (nouveau_bo_wait(q->bo, NOUVEAU_BO_RD, nvc0->base.client))
          return FALSE;
    }
    q->state = NVC0_QUERY_STATE_READY;

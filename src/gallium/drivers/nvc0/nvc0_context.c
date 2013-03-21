@@ -231,8 +231,9 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
    if (!nvc0_blitctx_create(nvc0))
       goto out_err;
 
-   nvc0->base.pushbuf = screen->base.pushbuf;
-   nvc0->base.client = screen->base.client;
+   ret = nouveau_context_init(&nvc0->base, 0);
+   if (ret)
+      goto out_err;
 
    ret = nouveau_bufctx_new(screen->base.client, 2, &nvc0->bufctx);
    if (!ret)
@@ -268,9 +269,9 @@ nvc0_create(struct pipe_screen *pscreen, void *priv)
 
    if (!screen->cur_ctx) {
       screen->cur_ctx = nvc0;
-      nouveau_pushbuf_bufctx(screen->base.pushbuf, nvc0->bufctx);
+      nouveau_pushbuf_bufctx(nvc0->base.pushbuf, nvc0->bufctx);
    }
-   screen->base.pushbuf->kick_notify = nvc0_default_kick_notify;
+   nvc0->base.pushbuf->kick_notify = nvc0_default_kick_notify;
 
    nvc0_init_query_functions(nvc0);
    nvc0_init_surface_functions(nvc0);
@@ -339,6 +340,7 @@ out_err:
          nouveau_bufctx_del(&nvc0->bufctx);
       if (nvc0->blit)
          FREE(nvc0->blit);
+      nouveau_context_fini(&nvc0->base);
       FREE(nvc0);
    }
    return NULL;
