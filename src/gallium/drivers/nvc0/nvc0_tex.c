@@ -228,7 +228,6 @@ nvc0_validate_tic(struct nvc0_context *nvc0, int s)
 {
    uint32_t commands[32];
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
-   struct nouveau_bo *txc = nvc0->screen->txc;
    unsigned i;
    unsigned n = 0;
    boolean need_flush = FALSE;
@@ -236,6 +235,7 @@ nvc0_validate_tic(struct nvc0_context *nvc0, int s)
    for (i = 0; i < nvc0->num_textures[s]; ++i) {
       struct nv50_tic_entry *tic = nv50_tic_entry(nvc0->textures[s][i]);
       struct nv04_resource *res;
+      int32_t slot;
       const boolean dirty = !!(nvc0->textures_dirty[s] & (1 << i));
 
       if (!tic) {
@@ -245,13 +245,11 @@ nvc0_validate_tic(struct nvc0_context *nvc0, int s)
       }
       res = nv04_resource(tic->pipe.texture);
 
-      if (tic->id < 0) {
-         tic->id = nvc0_screen_tic_alloc(nvc0->screen, tic);
-
+      if (!nvc0_tic_slot_get(nvc0, tic, &slot)) {
          PUSH_SPACE(push, 17);
          BEGIN_NVC0(push, NVC0_M2MF(OFFSET_OUT_HIGH), 2);
-         PUSH_DATAh(push, txc->offset + (tic->id * 32));
-         PUSH_DATA (push, txc->offset + (tic->id * 32));
+         PUSH_DATAh(push, nvc0->tex.bo->offset + NVC0_TIC_BASE + slot * 32);
+         PUSH_DATA (push, nvc0->tex.bo->offset + NVC0_TIC_BASE + slot * 32);
          BEGIN_NVC0(push, NVC0_M2MF(LINE_LENGTH_IN), 2);
          PUSH_DATA (push, 32);
          PUSH_DATA (push, 1);
@@ -264,16 +262,15 @@ nvc0_validate_tic(struct nvc0_context *nvc0, int s)
       } else
       if (res->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING) {
          BEGIN_NVC0(push, NVC0_3D(TEX_CACHE_CTL), 1);
-         PUSH_DATA (push, (tic->id << 4) | 1);
+         PUSH_DATA (push, (slot << 4) | 1);
       }
-      nvc0->screen->tic.lock[tic->id / 32] |= 1 << (tic->id % 32);
 
       res->status &= ~NOUVEAU_BUFFER_STATUS_GPU_WRITING;
       res->status |=  NOUVEAU_BUFFER_STATUS_GPU_READING;
 
       if (!dirty)
          continue;
-      commands[n++] = (tic->id << 9) | (i << 1) | 1;
+      commands[n++] = (slot << 9) | (i << 1) | 1;
 
       BCTX_REFN(nvc0->bufctx_3d, TEX(s, i), res, RD);
    }
@@ -294,7 +291,6 @@ nvc0_validate_tic(struct nvc0_context *nvc0, int s)
 static boolean
 nve4_validate_tic(struct nvc0_context *nvc0, unsigned s)
 {
-   struct nouveau_bo *txc = nvc0->screen->txc;
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    unsigned i;
    boolean need_flush = FALSE;
@@ -302,6 +298,7 @@ nve4_validate_tic(struct nvc0_context *nvc0, unsigned s)
    for (i = 0; i < nvc0->num_textures[s]; ++i) {
       struct nv50_tic_entry *tic = nv50_tic_entry(nvc0->textures[s][i]);
       struct nv04_resource *res;
+      int32_t slot;
       const boolean dirty = !!(nvc0->textures_dirty[s] & (1 << i));
 
       if (!tic) {
@@ -310,13 +307,11 @@ nve4_validate_tic(struct nvc0_context *nvc0, unsigned s)
       }
       res = nv04_resource(tic->pipe.texture);
 
-      if (tic->id < 0) {
-         tic->id = nvc0_screen_tic_alloc(nvc0->screen, tic);
-
+      if (!nvc0_tic_slot_get(nvc0, tic, &slot)) {
          PUSH_SPACE(push, 16);
          BEGIN_NVC0(push, NVE4_P2MF(DST_ADDRESS_HIGH), 2);
-         PUSH_DATAh(push, txc->offset + (tic->id * 32));
-         PUSH_DATA (push, txc->offset + (tic->id * 32));
+         PUSH_DATAh(push, nvc0->tex.bo->offset + NVC0_TIC_BASE + slot * 32);
+         PUSH_DATA (push, nvc0->tex.bo->offset + NVC0_TIC_BASE + slot * 32);
          BEGIN_NVC0(push, NVE4_P2MF(LINE_LENGTH_IN), 2);
          PUSH_DATA (push, 32);
          PUSH_DATA (push, 1);
@@ -328,15 +323,14 @@ nve4_validate_tic(struct nvc0_context *nvc0, unsigned s)
       } else
       if (res->status & NOUVEAU_BUFFER_STATUS_GPU_WRITING) {
          BEGIN_NVC0(push, NVC0_3D(TEX_CACHE_CTL), 1);
-         PUSH_DATA (push, (tic->id << 4) | 1);
+         PUSH_DATA (push, (slot << 4) | 1);
       }
-      nvc0->screen->tic.lock[tic->id / 32] |= 1 << (tic->id % 32);
 
       res->status &= ~NOUVEAU_BUFFER_STATUS_GPU_WRITING;
       res->status |=  NOUVEAU_BUFFER_STATUS_GPU_READING;
 
       nvc0->tex_handles[s][i] &= ~NVE4_TIC_ENTRY_INVALID;
-      nvc0->tex_handles[s][i] |= tic->id;
+      nvc0->tex_handles[s][i] |= slot;
       if (dirty)
          BCTX_REFN(nvc0->bufctx_3d, TEX(s, i), res, RD);
    }
@@ -381,6 +375,7 @@ nvc0_validate_tsc(struct nvc0_context *nvc0, int s)
 
    for (i = 0; i < nvc0->num_samplers[s]; ++i) {
       struct nv50_tsc_entry *tsc = nv50_tsc_entry(nvc0->samplers[s][i]);
+      int32_t slot;
 
       if (!(nvc0->samplers_dirty[s] & (1 << i)))
          continue;
@@ -388,17 +383,14 @@ nvc0_validate_tsc(struct nvc0_context *nvc0, int s)
          commands[n++] = (i << 4) | 0;
          continue;
       }
-      if (tsc->id < 0) {
-         tsc->id = nvc0_screen_tsc_alloc(nvc0->screen, tsc);
-
-         nvc0_m2mf_push_linear(&nvc0->base, nvc0->screen->txc,
-                               65536 + tsc->id * 32, NOUVEAU_BO_VRAM,
+      if (nvc0_tsc_slot_get(nvc0, tsc, &slot)) {
+         nvc0_m2mf_push_linear(&nvc0->base, nvc0->tex.bo,
+                               NVC0_TSC_BASE + slot * 32, NOUVEAU_BO_VRAM,
                                32, tsc->tsc);
          need_flush = TRUE;
       }
-      nvc0->screen->tsc.lock[tsc->id / 32] |= 1 << (tsc->id % 32);
 
-      commands[n++] = (tsc->id << 12) | (i << 4) | 1;
+      commands[n++] = (slot << 12) | (i << 4) | 1;
    }
    for (; i < nvc0->state.num_samplers[s]; ++i)
       commands[n++] = (i << 4) | 0;
@@ -417,25 +409,23 @@ nvc0_validate_tsc(struct nvc0_context *nvc0, int s)
 boolean
 nve4_validate_tsc(struct nvc0_context *nvc0, int s)
 {
-   struct nouveau_bo *txc = nvc0->screen->txc;
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    unsigned i;
    boolean need_flush = FALSE;
 
    for (i = 0; i < nvc0->num_samplers[s]; ++i) {
       struct nv50_tsc_entry *tsc = nv50_tsc_entry(nvc0->samplers[s][i]);
+      int32_t slot;
 
       if (!tsc) {
          nvc0->tex_handles[s][i] |= NVE4_TSC_ENTRY_INVALID;
          continue;
       }
-      if (tsc->id < 0) {
-         tsc->id = nvc0_screen_tsc_alloc(nvc0->screen, tsc);
-
+      if (!nvc0_tsc_slot_get(nvc0, tsc, &slot)) {
          PUSH_SPACE(push, 16);
          BEGIN_NVC0(push, NVE4_P2MF(DST_ADDRESS_HIGH), 2);
-         PUSH_DATAh(push, txc->offset + 65536 + (tsc->id * 32));
-         PUSH_DATA (push, txc->offset + 65536 + (tsc->id * 32));
+         PUSH_DATAh(push, nvc0->tex.bo->offset + NVC0_TSC_BASE + slot * 32);
+         PUSH_DATA (push, nvc0->tex.bo->offset + NVC0_TSC_BASE + slot * 32);
          BEGIN_NVC0(push, NVE4_P2MF(LINE_LENGTH_IN), 2);
          PUSH_DATA (push, 32);
          PUSH_DATA (push, 1);
@@ -445,10 +435,9 @@ nve4_validate_tsc(struct nvc0_context *nvc0, int s)
 
          need_flush = TRUE;
       }
-      nvc0->screen->tsc.lock[tsc->id / 32] |= 1 << (tsc->id % 32);
 
       nvc0->tex_handles[s][i] &= ~NVE4_TSC_ENTRY_INVALID;
-      nvc0->tex_handles[s][i] |= tsc->id << 20;
+      nvc0->tex_handles[s][i] |= slot << 20;
    }
    for (; i < nvc0->state.num_samplers[s]; ++i) {
       nvc0->tex_handles[s][i] |= NVE4_TSC_ENTRY_INVALID;

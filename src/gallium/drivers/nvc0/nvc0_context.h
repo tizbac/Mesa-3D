@@ -91,6 +91,11 @@
 #define NVC0_BIND_M2MF          0
 #define NVC0_BIND_FENCE         1
 
+#define NVC0_TIC_MAX_ENTRIES  2048
+#define NVC0_TSC_MAX_ENTRIES  2048
+#define NVC0_TIC_BASE         0
+#define NVC0_TSC_BASE        (NVC0_TIC_MAX_ENTRIES * 32)
+
 
 struct nvc0_blitctx;
 
@@ -200,18 +205,23 @@ struct nvc0_context {
 
    struct {
       struct nouveau_bo *bo;
-      int *t_slot; /* nv50_tic_entry id -> local slot, dynamic size */
-      int *s_slot; /* nv50_tsc_entry id -> local slot, dynamic size */
-      /* these are not in a struct to save space: */
-      void **t_so; /* local slot -> nv50_tic_entry, fixed size */
-      void **s_so; /* local slot -> nv50_tsc_entry, fixed size */
-      uint8_t *t_ref; /* local slot bind count */
-      uint8_t *s_ref; /* local slot bind count */
-   } texcfg;
+      struct {
+         int16_t *slot;
+         void **cso;
+         uint8_t *ref;
+      } t;
+      struct {
+         int16_t *slot;
+         void **cso;
+         uint8_t *ref;
+      } s;
+   } tex;
+
    struct {
+      struct nvc0_program_instance **prog;
       struct nouveau_bo *bo;
-      struct nouveau_heap **mem; /* nv50_program id -> memory allocation */
-      uint32_t *code_base;
+      struct nouveau_heap *heap;
+      pipe_mutex lock;
    } text;
 
 #ifdef NVC0_WITH_DRAW_MODULE

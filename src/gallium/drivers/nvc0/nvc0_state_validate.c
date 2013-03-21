@@ -494,16 +494,17 @@ nvc0_ctx_state_restore(struct nvc0_context *nvc0)
                                      PIPE_RENDER_COND_NO_WAIT);
 
    BEGIN_NVC0(push, NVC0_3D(CODE_ADDRESS_HIGH), 2);
-   PUSH_DATAh(push, nvc0->text->offset);
-   PUSH_DATA (push, nvc0->text->offset);
+   PUSH_DATAh(push, nvc0->text.bo->offset);
+   PUSH_DATA (push, nvc0->text.bo->offset);
 
    BEGIN_NVC0(push, NVC0_3D(TIC_ADDRESS_HIGH), 3);
-   PUSH_DATAh(push, nvc0->texcfg->offset);
-   PUSH_DATA (push, nvc0->texcfg->offset);
+   PUSH_DATAh(push, nvc0->tex.bo->offset + NVC0_TIC_BASE);
+   PUSH_DATA (push, nvc0->tex.bo->offset + NVC0_TIC_BASE);
    PUSH_DATA (push, NVC0_TIC_MAX_ENTRIES - 1);
+
    BEGIN_NVC0(push, NVC0_3D(TSC_ADDRESS_HIGH), 3);
-   PUSH_DATAh(push, nvc0->texcfg->offset + 65536);
-   PUSH_DATA (push, nvc0->texcfg->offset + 65536);
+   PUSH_DATAh(push, nvc0->tex.bo->offset + NVC0_TSC_BASE);
+   PUSH_DATA (push, nvc0->tex.bo->offset + NVC0_TSC_BASE);
    PUSH_DATA (push, NVC0_TSC_MAX_ENTRIES - 1);
 
    IMMED_NVC0(push, NVC0_3D(RASTERIZE_ENABLE), !nvc0->state.rasterizer_discard);

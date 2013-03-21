@@ -762,16 +762,6 @@ nvc0_screen_create(struct nouveau_device *dev)
    if (ret)
       goto fail;
 
-   BEGIN_NVC0(push, NVC0_3D(TIC_ADDRESS_HIGH), 3);
-   PUSH_DATAh(push, screen->txc->offset);
-   PUSH_DATA (push, screen->txc->offset);
-   PUSH_DATA (push, NVC0_TIC_MAX_ENTRIES - 1);
-
-   BEGIN_NVC0(push, NVC0_3D(TSC_ADDRESS_HIGH), 3);
-   PUSH_DATAh(push, screen->txc->offset + 65536);
-   PUSH_DATA (push, screen->txc->offset + 65536);
-   PUSH_DATA (push, NVC0_TSC_MAX_ENTRIES - 1);
-
    BEGIN_NVC0(push, NVC0_3D(SCREEN_Y_CONTROL), 1);
    PUSH_DATA (push, 0);
    BEGIN_NVC0(push, NVC0_3D(WINDOW_OFFSET_X), 2);

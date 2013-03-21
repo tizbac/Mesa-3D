@@ -64,18 +64,10 @@ nvc0_program_update_context_state(struct nvc0_context *nvc0,
 }
 
 static INLINE boolean
-nvc0_program_validate(struct nvc0_context *nvc0, struct nvc0_program *prog)
+nvc0_program_validate(struct nvc0_context *nvc0, struct nvc0_program_inst *prog)
 {
-   if (nvc0->text.mem[prog->id])
+   if (prog->mem)
       return TRUE;
-
-   if (!prog->translated) {
-      prog->translated = nvc0_program_translate(
-         prog, nvc0->screen->base.device->chipset);
-      if (!prog->translated)
-         return FALSE;
-   }
-
    if (likely(prog->code_size))
       return nvc0_program_upload_code(nvc0, prog);
    return TRUE; /* stream output info only */
@@ -86,6 +78,7 @@ nvc0_vertprog_validate(struct nvc0_context *nvc0)
 {
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    struct nvc0_program *vp = nvc0->vertprog;
+   struct nvc0_program_instance *vpi = nvc0->text.prog[vp->id];
 
    if (!nvc0_program_validate(nvc0, vp))
          return;
@@ -93,9 +86,9 @@ nvc0_vertprog_validate(struct nvc0_context *nvc0)
 
    BEGIN_NVC0(push, NVC0_3D(SP_SELECT(1)), 2);
    PUSH_DATA (push, 0x11);
-   PUSH_DATA (push, nvc0->text.code_base[vp->id]);
+   PUSH_DATA (push, vpi->code_base);
    BEGIN_NVC0(push, NVC0_3D(SP_GPR_ALLOC(1)), 1);
-   PUSH_DATA (push, vp->num_gprs);
+   PUSH_DATA (push, vpi->num_gprs);
 
    // BEGIN_NVC0(push, NVC0_3D_(0x163c), 1);
    // PUSH_DATA (push, 0);

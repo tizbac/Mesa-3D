@@ -16,29 +16,43 @@ struct nvc0_transform_feedback_state {
 
 #define NVC0_SHADER_HEADER_SIZE (20 * 4)
 
+struct nvc0_program_instance {
+   struct nvc0_program *base;
+
+   struct nouveau_heap *mem;
+
+   uint32_t code_base;
+   uint32_t code_size;
+   uint32_t immd_base;
+
+   uint32_t *code;
+   uint32_t *immd_data;
+
+   uint16_t immd_size; /* size of immediate array data */
+
+   uint8_t num_gprs;
+   uint8_t num_ucps;
+
+   boolean need_tls;
+
+   uint32_t flags[2];
+
+   uint32_t hdr[20];
+
+   void *relocs;
+};
+
 struct nvc0_program {
    struct pipe_shader_state pipe;
    nouveau_id_t id;
 
    ubyte type;
-   boolean translated;
-   boolean need_tls;
-   uint8_t num_gprs;
 
-   uint32_t *code;
-   uint32_t *immd_data;
-   unsigned code_size;
-   unsigned immd_base;
-   unsigned immd_size; /* size of immediate array data */
    unsigned parm_size; /* size of non-bindable uniforms (c0[]) */
-
-   uint32_t hdr[20];
-   uint32_t flags[2];
 
    struct {
       uint32_t clip_mode; /* clip/cull selection */
       uint8_t clip_enable; /* mask of defined clip planes */
-      uint8_t num_ucps; /* also set to max if ClipDistance is used */
       uint8_t edgeflag; /* attribute index of edgeflag input */
       boolean need_vertex_id;
    } vp;
@@ -57,8 +71,6 @@ struct nvc0_program {
       unsigned num_syms;
    } cp;
    uint8_t num_barriers;
-
-   void *relocs;
 
    struct nvc0_transform_feedback_state *tfb;
 };

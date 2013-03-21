@@ -11,9 +11,6 @@
 #include "nvc0_winsys.h"
 #include "nvc0_stateobj.h"
 
-#define NVC0_TIC_MAX_ENTRIES 2048
-#define NVC0_TSC_MAX_ENTRIES 2048
-
 /* doesn't count reserved slots (for auxiliary constants, immediates, etc.) */
 #define NVC0_MAX_PIPE_CONSTBUFS         14
 #define NVE4_MAX_PIPE_CONSTBUFS_COMPUTE  7
@@ -70,7 +67,7 @@ struct nvc0_screen {
       struct nouveau_ids prog;
    } ids;
    struct {
-      pipe_mutex prog;
+      pipe_mutex prog; /* when rebuilding shaders */
    } locks;
 };
 
