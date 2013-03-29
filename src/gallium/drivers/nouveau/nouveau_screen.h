@@ -4,6 +4,8 @@
 #include "pipe/p_screen.h"
 #include "util/u_memory.h"
 
+#define NOUVEAU_ENABLE_DRIVER_STATISTICS
+
 typedef uint32_t u32;
 typedef uint16_t u16;
 
@@ -44,7 +46,54 @@ struct nouveau_screen {
 	int64_t cpu_gpu_time_delta;
 
 	boolean hint_buf_keep_sysmem_copy;
+
+#ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS
+   union {
+      uint64_t v[27];
+      struct {
+         uint64_t tex_obj_current_count;
+         uint64_t tex_obj_current_bytes;
+         uint64_t buf_obj_current_count;
+         uint64_t buf_obj_current_bytes_vid;
+         uint64_t buf_obj_current_bytes_sys;
+         uint64_t tex_transfers_rd;
+         uint64_t tex_transfers_wr;
+         uint64_t tex_copy_count;
+         uint64_t tex_blit_count;
+         uint64_t tex_cache_flush_count;
+         uint64_t buf_transfers_rd;
+         uint64_t buf_transfers_wr;
+         uint64_t buf_read_bytes_staging_vid;
+         uint64_t buf_write_bytes_direct;
+         uint64_t buf_write_bytes_staging_vid;
+         uint64_t buf_write_bytes_staging_sys;
+         uint64_t buf_copy_bytes;
+         uint64_t buf_non_kernel_fence_sync_count;
+         uint64_t any_non_kernel_fence_sync_count;
+         uint64_t query_sync_count;
+         uint64_t gpu_serialize_count;
+         uint64_t draw_calls_array;
+         uint64_t draw_calls_indexed;
+         uint64_t draw_calls_fallback_count;
+         uint64_t user_buffer_upload_bytes;
+         uint64_t constbuf_upload_count;
+         uint64_t constbuf_upload_bytes;
+      } named;
+   } stats;
+#endif
 };
+
+#ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS
+# define NOUVEAU_DRV_STAT(s, n, v) do {         \
+      (s)->stats.named.n += (v);               \
+   } while(0)
+# define NOUVEAU_DRV_STAT_RES(r, n, v) do {                       \
+      nouveau_screen((r)->base.screen)->stats.named.n += (v);    \
+   } while(0)
+#else
+# define NOUVEAU_DRV_STAT(s, n, v)     do { } while(0)
+# define NOUVEAU_DRV_STAT_RES(r, n, v) do { } while(0)
+#endif
 
 static INLINE struct nouveau_screen *
 nouveau_screen(struct pipe_screen *pscreen)
