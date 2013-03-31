@@ -1097,6 +1097,7 @@ nv50_blit_eng2d(struct nv50_context *nv50, const struct pipe_blit_info *info)
       PUSH_DATA (push, NV50_2D_OPERATION_ROP);
    } else
    if (info->src.format == PIPE_FORMAT_R8_UNORM ||
+       info->src.format == PIPE_FORMAT_A8_UNORM ||
        info->src.format == PIPE_FORMAT_R16_UNORM) {
       mask = 0xff0000ff; /* also makes condition for OPERATION reset true */
       BEGIN_NV04(push, NV50_2D(BETA4), 2);
@@ -1237,10 +1238,12 @@ nv50_blit(struct pipe_context *pipe, const struct pipe_blit_info *info)
           !nv50_2d_format_faithful(info->src.format))
          eng3d = TRUE;
       if (info->dst.format == PIPE_FORMAT_R8_UNORM ||
+          info->dst.format == PIPE_FORMAT_A8_UNORM ||
           info->dst.format == PIPE_FORMAT_R16_UNORM)
          eng3d = TRUE;
       /* These work but they write RRR1 instead of R001. */
       if (info->src.format == PIPE_FORMAT_R8_UNORM ||
+          info->src.format == PIPE_FORMAT_A8_UNORM ||
           info->src.format == PIPE_FORMAT_R16_UNORM)
          /* With these we can use SRCCOPY_PREMULT. */
          if (info->dst.format != PIPE_FORMAT_R8G8B8A8_UNORM &&

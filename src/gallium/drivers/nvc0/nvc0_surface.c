@@ -998,6 +998,7 @@ nvc0_blit_eng2d(struct nvc0_context *nvc0, const struct pipe_blit_info *info)
       IMMED_NVC0(push, NVC0_2D(OPERATION), NVC0_2D_OPERATION_ROP);
    } else
    if (info->src.format == PIPE_FORMAT_R8_UNORM ||
+       info->src.format == PIPE_FORMAT_A8_UNORM ||
        info->src.format == PIPE_FORMAT_R16_UNORM) {
       mask = 0xff0000ff; /* also makes condition for OPERATION reset true */
       BEGIN_NVC0(push, NVC0_2D(BETA4), 2);
@@ -1137,10 +1138,12 @@ nvc0_blit(struct pipe_context *pipe, const struct pipe_blit_info *info)
        * like to do any format conversion (DATA_ERROR 0x34 on trigger).
        */
       if (info->dst.format == PIPE_FORMAT_R8_UNORM ||
+          info->dst.format == PIPE_FORMAT_A8_UNORM ||
           info->dst.format == PIPE_FORMAT_R16_UNORM)
          eng3d = TRUE;
       /* These work but they write RRR1 instead of R001. */
       if (info->src.format == PIPE_FORMAT_R8_UNORM ||
+          info->src.format == PIPE_FORMAT_A8_UNORM ||
           info->src.format == PIPE_FORMAT_R16_UNORM)
          /* With these we can use SRCCOPY_PREMULT. */
          if (info->dst.format != PIPE_FORMAT_R8G8B8A8_UNORM &&
