@@ -404,6 +404,7 @@ nvc0_miptree_transfer_map(struct pipe_context *pctx,
    tx->base.layer_stride = tx->nblocksy * tx->base.stride;
 
    if (usage & PIPE_TRANSFER_MAP_DIRECTLY) {
+      tx->base.stride = align(tx->base.stride, 128);
       *ptransfer = &tx->base;
       return mt->base.bo->map + mt->base.offset;
    }
