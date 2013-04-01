@@ -703,9 +703,9 @@ static const char *nve4_pm_query_names[] =
    "active_warps",
    "active_cycles",
    /* metrics, i.e. functions of the MP counters */
+   "metric-ipc",                 /* inst_executed, clock */
    "metric-achieved_occupancy",  /* active_warps, active_cycles */
    "metric-sm_efficiency",       /* active_cycles, clock */
-   "metric-ipc",                 /* inst_executed, clock */
    "metric-inst_replay_overhead" /* inst_issued, inst_executed */
 };
 
@@ -725,9 +725,9 @@ struct nve4_mp_counter_cfg
    uint32_t src_sel : 32; /* signal selection for up to 5 sources */
 };
 
-#define NVE4_COUNTER_OPC_SUM            0
-#define NVE4_COUNTER_OPC_OR             1
-#define NVE4_COUNTER_OPC_AND            2
+#define NVE4_COUNTER_OPn_SUM            0
+#define NVE4_COUNTER_OPn_OR             1
+#define NVE4_COUNTER_OPn_AND            2
 #define NVE4_COUNTER_OP2_REL_SUM_MM     3 /* (sum(ctr0) - sum(ctr1)) / sum(ctr0) */
 #define NVE4_COUNTER_OP2_DIV_SUM_M0     4 /* sum(ctr0) / ctr1 of MP[0]) */
 #define NVE4_COUNTER_OP2_AVG_DIV_MM     5 /* avg(ctr0 / ctr1) */
@@ -741,8 +741,8 @@ struct nve4_mp_pm_query_cfg
    uint8_t norm; /* value that ctr[0] is divided by */
 };
 
-#define _Q1A(n, f, m, g, s) [NVE4_PM_QUERY_##n] = { { { f, NVE4_COMPUTE_MP_PM_FUNC_MODE_##m, 0, 0, NVE4_COMPUTE_MP_PM_A_SIGSEL_##g, s }, {}, {}, {} }, 1, NVE4_COUNTER_OPC_SUM, 1 }
-#define _Q1B(n, f, m, g, s) [NVE4_PM_QUERY_##n] = { { { f, NVE4_COMPUTE_MP_PM_FUNC_MODE_##m, 0, 1, NVE4_COMPUTE_MP_PM_B_SIGSEL_##g, s }, {}, {}, {} }, 1, NVE4_COUNTER_OPC_SUM, 1 }
+#define _Q1A(n, f, m, g, s) [NVE4_PM_QUERY_##n] = { { { f, NVE4_COMPUTE_MP_PM_FUNC_MODE_##m, 0, 0, NVE4_COMPUTE_MP_PM_A_SIGSEL_##g, s }, {}, {}, {} }, 1, NVE4_COUNTER_OPn_SUM, 1 }
+#define _Q1B(n, f, m, g, s) [NVE4_PM_QUERY_##n] = { { { f, NVE4_COMPUTE_MP_PM_FUNC_MODE_##m, 0, 1, NVE4_COMPUTE_MP_PM_B_SIGSEL_##g, s }, {}, {}, {} }, 1, NVE4_COUNTER_OPn_SUM, 1 }
 #define _M2A(n, f0, m0, g0, s0, f1, m1, g1, s1, o, w) [NVE4_PM_QUERY_METRIC_##n] = { {    \
    { f0, NVE4_COMPUTE_MP_PM_FUNC_MODE_##m0, 0, 0, NVE4_COMPUTE_MP_PM_A_SIGSEL_##g0, s0 }, \
    { f1, NVE4_COMPUTE_MP_PM_FUNC_MODE_##m1, 0, 0, NVE4_COMPUTE_MP_PM_A_SIGSEL_##g1, s1 }, \
@@ -982,19 +982,19 @@ nve4_mp_pm_query_result(struct nvc0_context *nvc0, struct nvc0_query *q,
          count[p][c] = 0;
    }
 
-   if (cfg->op == NVE4_COUNTER_OPC_SUM) {
+   if (cfg->op == NVE4_COUNTER_OPn_SUM) {
       for (c = 0; c < cfg->num_counters; ++c)
          for (p = 0; p < mp_count; ++p)
             value += count[p][c];
    } else
-   if (cfg->op == NVE4_COUNTER_OPC_OR) {
+   if (cfg->op == NVE4_COUNTER_OPn_OR) {
       uint32_t v = 0;
       for (c = 0; c < cfg->num_counters; ++c)
          for (p = 0; p < mp_count; ++p)
             v |= count[p][c];
       value = v;
    } else
-   if (cfg->op == NVE4_COUNTER_OPC_AND) {
+   if (cfg->op == NVE4_COUNTER_OPn_AND) {
       uint32_t v = ~0;
       for (c = 0; c < cfg->num_counters; ++c)
          for (p = 0; p < mp_count; ++p)
