@@ -49,7 +49,7 @@ struct nouveau_screen {
 
 #ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS
    union {
-      uint64_t v[27];
+      uint64_t v[29];
       struct {
          uint64_t tex_obj_current_count;
          uint64_t tex_obj_current_bytes;
@@ -78,6 +78,8 @@ struct nouveau_screen {
          uint64_t user_buffer_upload_bytes;
          uint64_t constbuf_upload_count;
          uint64_t constbuf_upload_bytes;
+         uint64_t pushbuf_count;
+         uint64_t resource_validate_count;
       } named;
    } stats;
 #endif
@@ -90,9 +92,11 @@ struct nouveau_screen {
 # define NOUVEAU_DRV_STAT_RES(r, n, v) do {                       \
       nouveau_screen((r)->base.screen)->stats.named.n += (v);    \
    } while(0)
+# define NOUVEAU_DRV_STAT_IFD(x) x
 #else
 # define NOUVEAU_DRV_STAT(s, n, v)     do { } while(0)
 # define NOUVEAU_DRV_STAT_RES(r, n, v) do { } while(0)
+# define NOUVEAU_DRV_STAT_IFD(x)
 #endif
 
 static INLINE struct nouveau_screen *
