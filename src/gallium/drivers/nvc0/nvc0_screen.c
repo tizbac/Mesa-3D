@@ -708,8 +708,6 @@ nvc0_screen_create(struct nouveau_device *dev)
    }
    BEGIN_NVC0(push, NVC0_3D(CALL_LIMIT_LOG), 1);
    PUSH_DATA (push, 8); /* 128 */
-   BEGIN_NVC0(push, NVC0_3D(ZCULL_STATCTRS_ENABLE), 1);
-   PUSH_DATA (push, 1);
    if (screen->eng3d->oclass >= NVC1_3D_CLASS) {
       BEGIN_NVC0(push, NVC0_3D(CACHE_SPLIT), 1);
       PUSH_DATA (push, NVC0_3D_CACHE_SPLIT_48K_SHARED_16K_L1);
@@ -830,8 +828,6 @@ nvc0_screen_create(struct nouveau_device *dev)
    BEGIN_NVC0(push, NVC0_3D(WINDOW_OFFSET_X), 2);
    PUSH_DATA (push, 0);
    PUSH_DATA (push, 0);
-   BEGIN_NVC0(push, NVC0_3D(ZCULL_REGION), 1); /* deactivate ZCULL */
-   PUSH_DATA (push, 0x3f);
 
    BEGIN_NVC0(push, NVC0_3D(CLIP_RECTS_MODE), 1);
    PUSH_DATA (push, NVC0_3D_CLIP_RECTS_MODE_INSIDE_ANY);
@@ -900,6 +896,23 @@ nvc0_screen_create(struct nouveau_device *dev)
 
    if (nvc0_screen_init_compute(screen))
       goto fail;
+
+   /* init ZCULL */
+   BEGIN_NVC0(push, NVC0_3D(ZCULL_ADDRESS_HIGH), 2);
+   PUSH_DATAh(push, 0x2c);
+   PUSH_DATA (push, 0);
+   BEGIN_NVC0(push, NVC0_3D(ZCULL_LIMIT_HIGH), 2);
+   PUSH_DATAh(push, 0x2c);
+   PUSH_DATA (push, 0x20000000);
+   BEGIN_NVC0(push, NVC0_3D(ZCULL_REGION), 1); /* deactivate ZCULL */
+   PUSH_DATA (push, 0x3f);
+   BEGIN_NVC0(push, NVC0_3D(ZCULL_WINDOW_OFFSET_X), 2);
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 0);
+   BEGIN_NVC0(push, NVC0_3D(ZCULL_STATCTRS_ENABLE), 1);
+   PUSH_DATA (push, 1);
+   BEGIN_NVC0(push, SUBC_3D(0x1968), 1);
+   PUSH_DATA (push, 0x11); /* enable ZCULL Z and S */
 
    PUSH_KICK (push);
 

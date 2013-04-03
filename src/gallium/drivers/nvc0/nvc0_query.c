@@ -147,7 +147,14 @@ nvc0_query_create(struct pipe_context *pipe, unsigned type)
       space = 16;
       break;
    default:
+      if (type >= NVC0_QUERY_ZCULL_STATS(0) &&
+          type <= NVC0_QUERY_ZCULL_STATS(3)) {
+         space = 0x20;
+         q->index = type - NVC0_QUERY_ZCULL_STATS(0);
+         break;
+      }
 #ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS
+      else
       if (type >= NVC0_QUERY_DRV_STAT(0) && type <= NVC0_QUERY_DRV_STAT_LAST) {
          space = 0;
          q->is64bit = true;
@@ -302,6 +309,10 @@ nvc0_query_begin(struct pipe_context *pipe, struct pipe_query *pq)
       nvc0_query_get(push, q, 0xc0 + 0x90, 0x0e809002); /* TEP, LAUNCHES */
       break;
    default:
+      if (q->type >= NVC0_QUERY_ZCULL_STATS(0) &&
+          q->type <= NVC0_QUERY_ZCULL_STATS(3)) {
+         nvc0_query_get(push, q, 0x10, 0x05007002 + (q->index << 24));
+      } else
 #ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS
       if (q->type >= NVC0_QUERY_DRV_STAT(0) &&
           q->type <= NVC0_QUERY_DRV_STAT_LAST) {
@@ -384,6 +395,10 @@ nvc0_query_end(struct pipe_context *pipe, struct pipe_query *pq)
       nvc0_query_get(push, q, 0x00, 0x0d005002 | (q->index << 5));
       break;
    default:
+      if (q->type >= NVC0_QUERY_ZCULL_STATS(0) &&
+          q->type <= NVC0_QUERY_ZCULL_STATS(3)) {
+         nvc0_query_get(push, q, 0x00, 0x05007002 + (q->index << 24));
+      } else
 #ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS
       if (q->type >= NVC0_QUERY_DRV_STAT(0) &&
           q->type <= NVC0_QUERY_DRV_STAT_LAST) {
@@ -457,6 +472,10 @@ nvc0_query_result(struct pipe_context *pipe, struct pipe_query *pq,
       res8[0] = TRUE;
       break;
    case PIPE_QUERY_OCCLUSION_COUNTER: /* u32 sequence, u32 count, u64 time */
+   case NVC0_QUERY_ZCULL_STATS(0):
+   case NVC0_QUERY_ZCULL_STATS(1):
+   case NVC0_QUERY_ZCULL_STATS(2):
+   case NVC0_QUERY_ZCULL_STATS(3):
       res64[0] = q->data[1] - q->data[5];
       break;
    case PIPE_QUERY_OCCLUSION_PREDICATE:
@@ -1139,6 +1158,7 @@ nvc0_screen_get_driver_query_info(struct pipe_screen *pscreen,
    int count = 0;
 
    count += NVC0_QUERY_DRV_STAT_COUNT;
+   count += 4; /* ZCULL stats */
 
    if (screen->base.class_3d >= NVE4_3D_CLASS) {
       if (screen->base.device->drm_version >= 0x01000101)
@@ -1156,9 +1176,23 @@ nvc0_screen_get_driver_query_info(struct pipe_screen *pscreen,
       return 1;
    } else
 #endif
+   if (id < (NVC0_QUERY_DRV_STAT_COUNT + 4)) {
+      static const char *zcull_stats_names[] =
+      {
+         "zcull-stats-0",
+         "zcull-stats-1",
+         "zcull-stats-2",
+         "zcull-stats-3"
+      };
+      info->name = zcull_stats_names[id - NVC0_QUERY_DRV_STAT_COUNT];
+      info->query_type = NVC0_QUERY_ZCULL_STATS(id - NVC0_QUERY_DRV_STAT_COUNT);
+      info->max_value = 0xffffffff;
+      info->uses_byte_units = FALSE;
+      return 1;
+   } else
    if (id < count) {
-      info->name = nve4_pm_query_names[id - NVC0_QUERY_DRV_STAT_COUNT];
-      info->query_type = NVE4_PM_QUERY(id - NVC0_QUERY_DRV_STAT_COUNT);
+      info->name = nve4_pm_query_names[id - NVC0_QUERY_DRV_STAT_COUNT - 4];
+      info->query_type = NVE4_PM_QUERY(id - NVC0_QUERY_DRV_STAT_COUNT - 4);
       info->max_value = (id < NVE4_PM_QUERY_METRIC_MP_OCCUPANCY) ?
          ~0ULL : 100;
       info->uses_byte_units = FALSE;

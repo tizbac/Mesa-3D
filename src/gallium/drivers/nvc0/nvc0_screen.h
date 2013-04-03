@@ -149,6 +149,16 @@ nvc0_screen(struct pipe_screen *screen)
 ...
 */
 
+
+/* Misc queries.
+ */
+#define NVC0_QUERY_ZCULL_STATS(i)       (PIPE_QUERY_DRIVER_SPECIFIC + 512 + (i))
+#define NVC0_QUERY_ZCULL_STATS0          0
+#define NVC0_QUERY_ZCULL_STATS1          1
+#define NVC0_QUERY_ZCULL_STATS2          2
+#define NVC0_QUERY_ZCULL_STATS3          3
+
+
 /* Driver statistics queries:
  */
 #ifdef NOUVEAU_ENABLE_DRIVER_STATISTICS

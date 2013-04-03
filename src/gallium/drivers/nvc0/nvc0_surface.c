@@ -433,15 +433,32 @@ nvc0_clear(struct pipe_context *pipe, unsigned buffers,
    }
 
    if (buffers & PIPE_CLEAR_DEPTH) {
+      uint32_t zccfg;
+
+      zccfg  = depth > 0.5 ? 0 : 1; /* z direction */
+      zccfg |= 0 << 16; /* format */
+
       BEGIN_NVC0(push, NVC0_3D(CLEAR_DEPTH), 1);
       PUSH_DATA (push, fui(depth));
       mode |= NVC0_3D_CLEAR_BUFFERS_Z;
+
+      BEGIN_NVC0(push, SUBC_3D(0x0dbc), 1);
+      PUSH_DATA (push, zccfg);
    }
 
    if (buffers & PIPE_CLEAR_STENCIL) {
+      uint32_t stencil_criterion;
+
+      stencil_criterion  = 0x6; /* FUNC */
+      stencil_criterion |= 0x80 << 16; /* REF */
+      stencil_criterion |= 0xff << 28; /* MASK */
+
       BEGIN_NVC0(push, NVC0_3D(CLEAR_STENCIL), 1);
       PUSH_DATA (push, stencil & 0xff);
       mode |= NVC0_3D_CLEAR_BUFFERS_S;
+
+      BEGIN_NVC0(push, SUBC_3D(0x0dd8), 1);
+      PUSH_DATA (push, stencil_criterion);
    }
 
    BEGIN_NVC0(push, NVC0_3D(CLEAR_BUFFERS), 1);
