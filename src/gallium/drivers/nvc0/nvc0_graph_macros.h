@@ -233,4 +233,125 @@ static const uint32_t nvc0_9097_tep_select[] = /* 0x10 */
    0x00003041, /* 0x10: send $r6 */
 };
 
+/* NVC0_3D_MACRO_DRAW_ELEMENTS_INDIRECT
+ *
+ * NOTE: Saves and restores VB_ELEMENT,INSTANCE_BASE.
+ *
+ * arg     = mode
+ * parm[0] = count
+ * parm[1] = instance_count
+ * parm[2] = start
+ * parm[3] = index_bias
+ * parm[4] = start_instance
+ */
+static const uint32_t nvc0_9097_draw_elts_indirect[] =
+{
+   /* 0x00: parm $r3 (count) */
+   /* 0x01: parm $r2 (instance_count) */
+   /* 0x02: parm $r4 maddr 0x5f7 (INDEX_BATCH_FIRST, start) */
+   /* 0x04: parm $r4 send $r4 (index_bias, send start) */
+   /* 0x05: braz $r2 END */
+   /* 0x06: parm $r5 (start_instance) */
+   /* 0x07: read $r6 0x50d (VB_ELEMENT_BASE) */
+   /* 0x08: read $r7 0x50e (VB_INSTANCE_BASE) */
+   /* 0x09: maddr 0x150d (VB_ELEMENT,INSTANCE_BASE) */
+   /* 0x0a: send $r4 */
+   /* 0x0b: send $r5 */
+   /* 0x0c: mov $r4 0x1 */
+   /* 0x0d: maddr 0x586 (VERTEX_BEGIN_GL) */
+   /* 0x0e: send $r1 (mode) */
+   /* 0x0f: maddr 0x5f8 (INDEX_BATCH_COUNT) */
+   /* 0x10: send $r3 (count) */
+   /* 0x11: mov $r2 (sub $r2 $r4) */
+   /* 0x12: maddrsend 0x585 (VERTEX_END_GL) */
+   /* 0x13: branz $r2 AGAIN */
+   /* 0x14: mov $r1 (extrinsrt $r1 $r4 0 1 26) (set INSTANCE_NEXT) */
+   /* 0x15: maddr 0x150d (VB_ELEMENT,INSTANCE_BASE) */
+   /* 0x16: exit send $r6 */
+   /* 0x17: send $r7 */
+   /* 0x18: exit */
+   /* 0x19: nop */
+   0x00000301,
+   0x00000201,
+   0x017dc451,
+   0x00002431,
+   0x0004d007,
+   0x00000501,
+   0x01434615,
+   0x01438715,
+   0x05434021,
+   0x00002041,
+   0x00002841,
+   0x00004411,
+   0x01618021,
+   0x00000841,
+   0x017e0021,
+   0x00001841,
+   0x00051210,
+   0x01614071,
+   0xfffe9017,
+   0xd0410912,
+   0x05434021,
+   0x000030c1,
+   0x00003841,
+   0x00000091,
+   0x00000011
+};
+
+/* NVC0_3D_MACRO_DRAW_ARRAYS_INDIRECT:
+ *
+ * NOTE: Saves and restores VB_INSTANCE_BASE.
+ *
+ * arg     = mode
+ * parm[0] = count
+ * parm[1] = instance_count
+ * parm[2] = start
+ * parm[3] = start_instance
+ */
+static const uint32_t nvc0_9097_draw_arrays_indirect[] =
+{
+   /* 0x00: parm $r2 (count) */
+   /* 0x01: parm $r3 (instance_count) */
+   /* 0x02: parm $r4 maddr 0x35d (VERTEX_BUFFER_FIRST, start) */
+   /* 0x04: parm $r4 send $r4 (start_instance) */
+   /* 0x05: braz $r3 END */
+   /* 0x06: read $r6 0x50e (VB_INSTANCE_BASE) */
+   /* 0x07: maddr 0x50e (VB_INSTANCE_BASE) */
+   /* 0x08: mov $r5 0x1 */
+   /* 0x09: send $r4 */
+   /* 0x0a: maddr 0x586 (VERTEX_BEGIN_GL) */
+   /* 0x0b: send $r1 (mode) */
+   /* 0x0c: maddr 0x35e (VERTEX_BUFFER_COUNT) */
+   /* 0x0d: send $r2 */
+   /* 0x0e: mov $r3 (sub $r3 $r5) */
+   /* 0x0f: maddrsend 0x585 (VERTEX_END_GL) */
+   /* 0x10: branz $r3 AGAIN */
+   /* 0x11: mov $r1 (extrinsrt $r1 $r5 0 1 26) (set INSTANCE_NEXT) */
+   /* 0x12: exit maddr 0x50e (VB_INSTANCE_BASE to restore) */
+   /* 0x13: send $r6 */
+   /* 0x14: exit nop */
+   /* 0x15: nop */
+   0x00000201,
+   0x00000301,
+   0x00d74451,
+   0x00002431,
+   0x0003d807,
+   0x01438615,
+   0x01438021,
+   0x00004511,
+   0x00002041,
+   0x01618021,
+   0x00000841,
+   0x00d78021,
+   0x00001041,
+   0x00055b10,
+   0x01614071,
+   0xfffe9817,
+   0xd0414912,
+   0x014380a1,
+   0x00003041,
+   0x00000091,
+   0x00000011
+};
+
 #endif
