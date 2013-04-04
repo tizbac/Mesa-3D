@@ -189,7 +189,9 @@ nouveau_transfer_write(struct nouveau_context *nv, struct nouveau_transfer *tx,
    if (buf->data)
       memcpy(data, buf->data + base, size);
    else
-      buf->status |= NOUVEAU_BUFFER_STATUS_DIRTY;
+      buf->status |=
+         NOUVEAU_BUFFER_STATUS_GPU_WRITING |
+         NOUVEAU_BUFFER_STATUS_DIRTY;
 
    if (buf->domain == NOUVEAU_BO_VRAM)
       NOUVEAU_DRV_STAT(nv->screen, buf_write_bytes_staging_vid, size);
