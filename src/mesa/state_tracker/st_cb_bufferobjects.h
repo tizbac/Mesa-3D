@@ -54,6 +54,12 @@ st_buffer_object(struct gl_buffer_object *obj)
    return (struct st_buffer_object *) obj;
 }
 
+static INLINE const struct st_buffer_object *
+st_const_buffer_object(const struct gl_buffer_object *obj)
+{
+   return (const struct st_buffer_object *) obj;
+}
+
 
 extern void
 st_bufferobj_validate_usage(struct st_context *st,

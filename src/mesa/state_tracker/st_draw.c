@@ -256,6 +256,14 @@ st_draw_vbo(struct gl_context *ctx,
       }
    }
 
+   if (indirect) {
+      info.indirect = st_const_buffer_object(indirect)->buffer;
+
+      /* Primitive restart is not handled by the VBO module in this case. */
+      info.primitive_restart = ctx->Array._PrimitiveRestart;
+      info.restart_index = ctx->Array._RestartIndex;
+   }
+
    /* do actual drawing */
    for (i = 0; i < nr_prims; i++) {
       info.mode = translate_prim( ctx, prims[i].mode );
@@ -265,9 +273,13 @@ st_draw_vbo(struct gl_context *ctx,
       info.instance_count = prims[i].num_instances;
       info.index_bias = prims[i].basevertex;
       if (!ib) {
+         /* NOTE: For indirect drawing, max_index correctly evaluates to ~0,
+          * since start and count will be 0.
+          */
          info.min_index = info.start;
          info.max_index = info.start + info.count - 1;
       }
+      info.indirect_offset = prims[i].indirect_offset;
 
       if (ST_DEBUG & DEBUG_DRAW) {
          debug_printf("st/draw: mode %s  start %u  count %u  indexed %d\n",
@@ -277,7 +289,7 @@ st_draw_vbo(struct gl_context *ctx,
                       info.indexed);
       }
 
-      if (info.count_from_stream_output) {
+      if (info.count_from_stream_output || info.indirect) {
          cso_draw_vbo(st->cso_context, &info);
       }
       else if (info.primitive_restart) {
