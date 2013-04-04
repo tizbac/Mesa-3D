@@ -603,6 +603,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_USER_VERTEX_BUFFERS:
 	case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
 	case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
+	case PIPE_CAP_DRAW_INDIRECT:
 		return 0;
 
 	/* Stream output. */

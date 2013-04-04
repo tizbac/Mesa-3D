@@ -186,6 +186,8 @@ nv50_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
    case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
       return 0;
+   case PIPE_CAP_DRAW_INDIRECT:
+      return 0;
    default:
       NOUVEAU_ERR("unknown PIPE_CAP %d\n", param);
       return 0;

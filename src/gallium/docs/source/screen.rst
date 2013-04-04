@@ -151,6 +151,9 @@ The integer capabilities:
   dedicated memory should return 1 and all software rasterizers should return 0.
 * ``PIPE_CAP_QUERY_PIPELINE_STATISTICS``: Whether PIPE_QUERY_PIPELINE_STATISTICS
   is supported.
+* ``PIPE_CAP_DRAW_INDIRECT``: Whether the driver supports taking draw arguments
+  { count, instance_count, start, index_bias } from a PIPE_BUFFER resource.
+  See pipe_draw_info.
 
 
 .. _pipe_capf:
