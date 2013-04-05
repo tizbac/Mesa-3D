@@ -1151,6 +1151,55 @@ _save_DrawTransformFeedbackStreamInstanced(GLenum mode, GLuint name,
 
 
 static void GLAPIENTRY
+_save_DrawArraysIndirect(GLenum mode, const GLvoid *indirect)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   (void) mode;
+   (void) indirect;
+   _mesa_compile_error(ctx, GL_INVALID_OPERATION, "glDrawArraysIndirect");
+}
+
+
+static void GLAPIENTRY
+_save_DrawElementsIndirect(GLenum mode, GLenum type, const GLvoid *indirect)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   (void) mode;
+   (void) type;
+   (void) indirect;
+   _mesa_compile_error(ctx, GL_INVALID_OPERATION, "glDrawElementsIndirect");
+}
+
+
+static void GLAPIENTRY
+_save_MultiDrawArraysIndirect(GLenum mode, const GLvoid *indirect,
+                              GLsizei primcount, GLsizei stride)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   (void) mode;
+   (void) indirect;
+   (void) primcount;
+   (void) stride;
+   _mesa_compile_error(ctx, GL_INVALID_OPERATION, "glMultiDrawArraysIndirect");
+}
+
+
+static void GLAPIENTRY
+_save_MultiDrawElementsIndirect(GLenum mode, GLenum type,
+                                const GLvoid *indirect,
+                                GLsizei primcount, GLsizei stride)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   (void) mode;
+   (void) type;
+   (void) indirect;
+   (void) primcount;
+   (void) stride;
+   _mesa_compile_error(ctx, GL_INVALID_OPERATION, "glMultiDrawElementsIndirect");
+}
+
+
+static void GLAPIENTRY
 _save_Rectf(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2)
 {
    GET_CURRENT_CONTEXT(ctx);
@@ -1506,6 +1555,10 @@ _save_vtxfmt_init(struct gl_context *ctx)
    vfmt->DrawTransformFeedbackInstanced = _save_DrawTransformFeedbackInstanced;
    vfmt->DrawTransformFeedbackStreamInstanced =
          _save_DrawTransformFeedbackStreamInstanced;
+   vfmt->DrawArraysIndirect = _save_DrawArraysIndirect;
+   vfmt->DrawElementsIndirect = _save_DrawElementsIndirect;
+   vfmt->MultiDrawArraysIndirect = _save_MultiDrawArraysIndirect;
+   vfmt->MultiDrawElementsIndirect = _save_MultiDrawElementsIndirect;
 }
 
 
