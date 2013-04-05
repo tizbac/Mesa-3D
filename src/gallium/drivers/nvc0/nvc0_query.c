@@ -795,8 +795,7 @@ static const char *nve4_pm_query_names[] =
    "inst_issued",
    /* metrics, i.e. functions of the MP counters */
    "metric-ipc",                   /* inst_executed, clock */
-   "metric-ipac",                  /* inst_executed, active_cycles */
-   "metric-ipec",                  /* inst_executed, (bool)inst_executed */
+   "metric-ipc_active",            /* inst_executed, active_cycles */
    "metric-achieved_occupancy",    /* active_warps, active_cycles */
    "metric-sm_efficiency",         /* active_cycles, clock */
    "metric-inst_replay_overhead"   /* inst_issued, inst_executed */
@@ -823,6 +822,7 @@ struct nve4_mp_counter_cfg
 #define NVE4_COUNTER_OPn_AND            2
 #define NVE4_COUNTER_OP2_REL_SUM_MM     3 /* (sum(ctr0) - sum(ctr1)) / sum(ctr0) */
 #define NVE4_COUNTER_OP2_DIV_SUM_M0     4 /* sum(ctr0) / ctr1 of MP[0]) */
+#define NVE4_COUNTER_OP2_DIV_SUM_MM     5 /* sum(ctr0) / sum(ctr1) (avg weighted by ctr1) */
 #define NVE4_COUNTER_OP2_AVG_DIV_MM     5 /* avg(ctr0 / ctr1) */
 #define NVE4_COUNTER_OP2_AVG_DIV_M0     6 /* avg(ctr0) / ctr1 of MP[0]) */
 
@@ -890,12 +890,11 @@ static const struct nve4_mp_pm_query_cfg nve4_mp_pm_queries[] =
    _Q1A(BRANCH_DIVERGENT, 0x0001, B6, BRANCH, 0x00000010, 1, 1),
    _Q1B(ACTIVE_WARPS,  0x003f, B6, WARP, 0x31483104, 2, 1),
    _Q1B(ACTIVE_CYCLES, 0x0001, B6, WARP, 0x00000000, 1, 1),
-   _M2AB(IPC, 0x3, B6, EXEC, 0x398, 0xffff, LOGOP, WARP, 0x0, DIV_SUM_M0, 10, 1),
-   _M2AB(IPAC, 0x3, B6, EXEC, 0x398, 0x1, B6, WARP, 0x0, AVG_DIV_MM, 10, 1),
-   _M2A(IPEC, 0x3, B6, EXEC, 0x398, 0xe, LOGOP, EXEC, 0x398, AVG_DIV_MM, 10, 1),
+   _M2AB(IPC, 0x3, B6, EXEC, 0x398, 0xffff, LOGOP, WARP, 0x0, DIV_SUM_M0, 100, 1),
+   _M2AB(IPC_ACTIVE, 0x3, B6, EXEC, 0x398, 0x1, B6, WARP, 0x0, DIV_SUM_MM, 100, 1),
    _M2A(INST_REPLAY_OHEAD, 0x3, B6, ISSUE, 0x104, 0x3, B6, EXEC, 0x398, REL_SUM_MM, 100, 1),
-   _M2B(MP_OCCUPANCY, 0x3f, B6, WARP, 0x31483104, 0x01, B6, WARP, 0x0, AVG_DIV_MM, 200, 64),
-   _M2B(MP_EFFICIENCY, 0x01, B6, WARP, 0x0, 0xffff, LOGOP, WARP, 0x0, AVG_DIV_M0, 100, 1),
+   _M2B(MP_OCCUPANCY, 0x3f, B6, WARP, 0x31483104, 0x01, B6, WARP, 0x0, DIV_SUM_MM, 200, 64),
+   _M2B(MP_EFFICIENCY, 0x01, B6, WARP, 0x0, 0xffff, LOGOP, WARP, 0x0, DIV_SUM_MM, 100, 1),
 };
 
 #undef _Q1A
@@ -1068,6 +1067,9 @@ nve4_mp_pm_query_result(struct nvc0_context *nvc0, struct nvc0_query *q,
 
    cfg = &nve4_mp_pm_queries[q->type - PIPE_QUERY_DRIVER_SPECIFIC];
 
+   if (debug_get_bool_option("NVE4_PM_SINGLE_MP", FALSE))
+      mp_count = 1;
+
    for (p = 0; p < mp_count; ++p) {
       const unsigned b = (0x60 / 4) * p;
 
@@ -1124,6 +1126,15 @@ nve4_mp_pm_query_result(struct nvc0_context *nvc0, struct nvc0_query *q,
          value = (value * cfg->norm[0]) / (count[0][1] * cfg->norm[1]);
       else
          value = 0;
+   } else
+   if (cfg->op == NVE4_COUNTER_OP2_DIV_SUM_MM) {
+      uint64_t v[2] = { 0, 0 };
+      for (p = 0; p < mp_count; ++p) {
+         v[0] += count[p][0];
+         v[1] += count[p][1];
+      }
+      if (v[1])
+         value = (cfg->norm[0] * v[0]) / (cfg->norm[1] * v[1]);
    } else
    if (cfg->op == NVE4_COUNTER_OP2_AVG_DIV_MM) {
       unsigned mp_used = 0;
