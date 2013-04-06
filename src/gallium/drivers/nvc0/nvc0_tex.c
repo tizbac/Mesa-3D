@@ -78,6 +78,7 @@ nvc0_create_texture_view(struct pipe_context *pipe,
    uint64_t address;
    uint32_t *tic;
    uint32_t swz[4];
+   uint32_t width, height;
    uint32_t depth;
    struct nv50_tic_entry *view;
    struct nv50_miptree *mt;
@@ -198,26 +199,30 @@ nvc0_create_texture_view(struct pipe_context *pipe,
       return FALSE;
    }
 
-   if (mt->base.base.target == PIPE_BUFFER)
-      tic[3] = mt->base.base.width0;
-   else
-      tic[3] = (flags & NV50_TEXVIEW_FILTER_MSAA8) ? 0x20000000 : 0x00300000;
+   tic[3] = (flags & NV50_TEXVIEW_FILTER_MSAA8) ? 0x20000000 : 0x00300000;
 
-   tic[4] = (1 << 31) | (mt->base.base.width0 << mt->ms_x);
+   if (flags & NV50_TEXVIEW_ACCESS_RESOLVE) {
+      width = mt->base.base.width0 << mt->ms_x;
+      height = mt->base.base.height0 << mt->ms_y;
+   } else {
+      width = mt->base.base.width0;
+      height = mt->base.base.height0;
+   }
 
-   tic[5] = (mt->base.base.height0 << mt->ms_y) & 0xffff;
+   tic[4] = (1 << 31) | width;
+
+   tic[5] = height & 0xffff;
    tic[5] |= depth << 16;
    tic[5] |= mt->base.base.last_level << 28;
 
-   tic[6] = (mt->ms_x > 1) ? 0x88000000 : 0x03000000; /* sampling points */
+   /* sampling points: (?) */
+   if (mt->ms_x > 1)
+      tic[6] = (flags & NV50_TEXVIEW_ACCESS_RESOLVE) ? 0x20000000 : 0x03000000;
+   else
+      tic[6] = 0x03000000;
 
    tic[7] = (view->pipe.u.tex.last_level << 4) | view->pipe.u.tex.first_level;
-
-   /*
-   if (mt->base.base.target == PIPE_TEXTURE_2D_MS ||
-       mt->base.base.target == PIPE_TEXTURE_2D_ARRAY_MS)
-      tic[7] |= mt->ms_mode << 12;
-   */
+   tic[7] |= mt->ms_mode << 12;
 
    return &view->pipe;
 }
