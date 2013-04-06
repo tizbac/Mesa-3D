@@ -399,6 +399,7 @@ void st_init_extensions(struct st_context *st)
 
       { o(OES_standard_derivatives),         PIPE_CAP_SM3                              },
       { o(ARB_texture_cube_map_array),       PIPE_CAP_CUBE_MAP_ARRAY                   },
+      { o(ARB_texture_multisample),          PIPE_CAP_TEXTURE_MULTISAMPLE              },
       { o(ARB_draw_indirect),                PIPE_CAP_DRAW_INDIRECT                    },
    };
 
@@ -652,6 +653,9 @@ void st_init_extensions(struct st_context *st)
                                       PIPE_TEXTURE_2D, i,
                                       PIPE_BIND_RENDER_TARGET)) {
          ctx->Const.MaxSamples = i;
+         ctx->Const.MaxColorTextureSamples = i;
+         ctx->Const.MaxDepthTextureSamples = i;
+         ctx->Const.MaxIntegerSamples = i;
          break;
       }
    }
