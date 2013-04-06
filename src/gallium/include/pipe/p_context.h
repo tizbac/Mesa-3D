@@ -520,6 +520,10 @@ struct pipe_context {
                        const uint *block_layout, const uint *grid_layout,
                        uint32_t pc, const void *input);
    /*@}*/
+   void (*get_sample_position)(struct pipe_context *context,
+                               int max_samples,
+                               unsigned sample_index,
+                               float *out_value);
 };
 
 
