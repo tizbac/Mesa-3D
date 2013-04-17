@@ -278,6 +278,21 @@ NV50LegalizeSSA::propagateWriteToOutput(Instruction *st)
    // TODO: move exports (if beneficial) in common opt pass
    if (di->isPseudo() || isTextureOp(di->op) || di->defCount(0xff, true) > 1)
       return;
+   else if (prog->getType() == Program::TYPE_GEOMETRY) {
+      // Only propagate output writes in geometry shaders when we can be sure
+      // that we are propagating to the same output vertex.
+      if (di->bb != st->bb)
+         return;
+      Instruction *i;
+      for (i = di; i; i = i->next) {
+         if (i == st)
+            break;
+         else if (i->op == OP_EMIT)
+            return;
+      }
+      if (!i)
+         return;
+   }
    for (int s = 0; di->srcExists(s); ++s)
       if (di->src(s).getFile() == FILE_IMMEDIATE)
          return;
@@ -307,6 +322,9 @@ NV50LegalizeSSA::handleAddrDef(Instruction *i)
 
    i->getDef(0)->reg.size = 2; // $aX are only 16 bit
 
+   // PFETCH can always write to $a
+   if (i->op == OP_PFETCH)
+      return;
    // only ADDR <- SHL(GPR, IMM) and ADDR <- ADD(ADDR, IMM) are valid
    if (i->srcExists(1) && i->src(1).getFile() == FILE_IMMEDIATE) {
       if (i->op == OP_SHL && i->src(0).getFile() == FILE_GPR)
@@ -473,6 +491,9 @@ NV50LegalizeSSA::visit(BasicBlock *bb)
    for (insn = bb->getEntry(); insn; insn = next) {
       next = insn->next;
 
+      if (insn->defExists(0) && insn->getDef(0)->reg.file == FILE_ADDRESS)
+         handleAddrDef(insn);
+
       switch (insn->op) {
       case OP_EXPORT:
          if (outWrites)
@@ -491,9 +512,6 @@ NV50LegalizeSSA::visit(BasicBlock *bb)
       default:
          break;
       }
-
-      if (insn->defExists(0) && insn->getDef(0)->reg.file == FILE_ADDRESS)
-         handleAddrDef(insn);
    }
    return true;
 }
@@ -510,7 +528,9 @@ private:
    bool handleRDSV(Instruction *);
    bool handleWRSV(Instruction *);
 
+   bool handlePFETCH(Instruction *);
    bool handleEXPORT(Instruction *);
+   bool handleLOAD(Instruction *);
 
    bool handleDIV(Instruction *);
    bool handleSQRT(Instruction *);
@@ -1000,6 +1020,73 @@ NV50LoweringPreSSA::handleEXPORT(Instruction *i)
    return true;
 }
 
+bool
+NV50LoweringPreSSA::handleLOAD(Instruction *i)
+{
+   ValueRef src = i->src(0);
+
+   if (src.isIndirect(1)) {
+      assert(prog->getType() == Program::TYPE_GEOMETRY);
+      Value *addr = i->getIndirect(0, 1);
+
+      if (src.isIndirect(0)) {
+         // base address is in an address register, so move to a temp
+         Value *base = bld.getScratch();
+         bld.mkMov(base, addr);
+
+         Symbol *sym = new_Symbol(prog, FILE_SYSTEM_VALUE);
+         sym->reg.fileIndex = 0;
+         sym->setSV(nv50_ir::SV_VERTEX_STRIDE, 0);
+         Value *vstride = bld.mkOp1v(OP_RDSV, TYPE_U32, bld.getSSA(), sym);
+         Value *attrib = bld.mkOp2v(OP_SHL, TYPE_U32, bld.getSSA(),
+                                    i->getIndirect(0, 0), bld.mkImm(2));
+
+         // Calculate final address: addr = base + attr*vstride; use 16-bit
+         // multiplication since 32-bit would be lowered to multiple
+         // instructions, and we only need the low 16 bits of the result
+         Value *a[2], *b[2];
+         bld.mkSplit(a, 2, attrib);
+         bld.mkSplit(b, 2, vstride);
+         Value *sum = bld.mkOp3v(OP_MAD, TYPE_U16, bld.getSSA(), a[0], b[0],
+                                 base);
+
+         // move address from temp into an address register
+         addr = bld.getSSA(2, FILE_ADDRESS);
+         bld.mkMov(addr, sum);
+      }
+
+      i->setIndirect(0, 1, NULL);
+      i->setIndirect(0, 0, addr);
+   }
+
+   return true;
+}
+
+bool
+NV50LoweringPreSSA::handlePFETCH(Instruction *i)
+{
+   assert(prog->getType() == Program::TYPE_GEOMETRY);
+   ImmediateValue imm;
+   if (!i->src(0).getImmediate(imm))
+      return false;
+   int val0 = imm.reg.data.u32 << 2;
+
+   if (i->srcExists(1))
+   {
+      LValue *val = bld.getScratch();
+      Value *ptr = bld.getSSA(2, FILE_ADDRESS);
+      bld.mkOp2v(OP_SHL, TYPE_U32, ptr, i->getSrc(1), bld.mkImm(2));
+      bld.mkOp2v(OP_PFETCH, TYPE_U32, val, bld.mkImm(val0), ptr);
+
+      i->op = OP_SHL;
+      i->setSrc(0, val);
+      i->setSrc(1, bld.mkImm(0));
+   }
+   else
+      i->setSrc(0, bld.mkImm(val0));
+   return true;
+}
+
 // Set flags according to predicate and make the instruction read $cX.
 void
 NV50LoweringPreSSA::checkPredicate(Instruction *insn)
@@ -1058,6 +1145,8 @@ NV50LoweringPreSSA::visit(Instruction *i)
       return handleSQRT(i);
    case OP_EXPORT:
       return handleEXPORT(i);
+   case OP_LOAD:
+      return handleLOAD(i);
    case OP_RDSV:
       return handleRDSV(i);
    case OP_WRSV:
@@ -1068,6 +1157,8 @@ NV50LoweringPreSSA::visit(Instruction *i)
       return handlePRECONT(i);
    case OP_CONT:
       return handleCONT(i);
+   case OP_PFETCH:
+      return handlePFETCH(i);
    default:
       break;
    }
