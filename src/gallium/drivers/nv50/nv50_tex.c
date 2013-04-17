@@ -293,6 +293,7 @@ void nv50_validate_textures(struct nv50_context *nv50)
    boolean need_flush;
 
    need_flush  = nv50_validate_tic(nv50, 0);
+   need_flush  = nv50_validate_tic(nv50, 1);
    need_flush |= nv50_validate_tic(nv50, 2);
 
    if (need_flush) {
@@ -343,6 +344,7 @@ void nv50_validate_samplers(struct nv50_context *nv50)
    boolean need_flush;
 
    need_flush  = nv50_validate_tsc(nv50, 0);
+   need_flush  = nv50_validate_tsc(nv50, 1);
    need_flush |= nv50_validate_tsc(nv50, 2);
 
    if (need_flush) {
