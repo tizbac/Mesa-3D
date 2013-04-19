@@ -1113,8 +1113,8 @@ private:
       ValueMap values;
    };
 
+   Value *shiftAddress(Value *);
    Value *getVertexBase(int s);
-   Value *getIndirectAddress(Value *ptr);
    DataArray *getArrayForFile(unsigned file, int idx);
    Value *fetchSrc(int s, int c);
    Value *acquireDst(int d, int c);
@@ -1332,7 +1332,7 @@ Converter::getVertexBase(int s)
       if (tgsi.getSrc(s).isIndirect(1))
          rel = fetchSrc(tgsi.getSrc(s).getIndirect(1), 0, NULL);
       vtxBaseValid |= 1 << s;
-      vtxBase[s] = mkOp2v(OP_PFETCH, TYPE_U32, getSSA(2, FILE_ADDRESS),
+      vtxBase[s] = mkOp2v(OP_PFETCH, TYPE_U32, getSSA(4, FILE_ADDRESS),
                           mkImm(index), rel);
    }
    return vtxBase[s];
@@ -1392,11 +1392,11 @@ Converter::getArrayForFile(unsigned file, int idx)
 }
 
 Value *
-Converter::getIndirectAddress(Value *ptr)
+Converter::shiftAddress(Value *index)
 {
-   if(!ptr)
+   if (!index)
       return NULL;
-   return mkOp2v(OP_SHL, TYPE_U32, getSSA(2, FILE_ADDRESS), ptr, mkImm(4));
+   return mkOp2v(OP_SHL, TYPE_U32, getSSA(4, FILE_ADDRESS), index, mkImm(4));
 }
 
 Value *
@@ -1411,7 +1411,7 @@ Converter::fetchSrc(tgsi::Instruction::SrcRegister src, int c, Value *ptr)
       assert(!ptr);
       return loadImm(NULL, info->immd.data[idx * 4 + swz]);
    case TGSI_FILE_CONSTANT:
-      return mkLoadv(TYPE_U32, srcToSym(src, c), getIndirectAddress(ptr));
+      return mkLoadv(TYPE_U32, srcToSym(src, c), shiftAddress(ptr));
    case TGSI_FILE_INPUT:
       if (prog->getType() == Program::TYPE_FRAGMENT) {
          // don't load masked inputs, won't be assigned a slot
@@ -1419,13 +1419,17 @@ Converter::fetchSrc(tgsi::Instruction::SrcRegister src, int c, Value *ptr)
             return loadImm(NULL, swz == TGSI_SWIZZLE_W ? 1.0f : 0.0f);
 	 if (!ptr && info->in[idx].sn == TGSI_SEMANTIC_FACE)
             return mkOp1v(OP_RDSV, TYPE_F32, getSSA(), mkSysVal(SV_FACE, 0));
-         return interpolate(src, c, getIndirectAddress(ptr));
-      }
-      else if (ptr && prog->getType() == Program::TYPE_GEOMETRY)
+         return interpolate(src, c, shiftAddress(ptr));
+      } else
+      if (ptr && prog->getType() == Program::TYPE_GEOMETRY) {
+         // XXX: This is going to be a problem with scalar arrays, i.e. when
+         // we cannot assume that the address is given in units of vec4.
+         //
          // nv50 and nvc0 need different things here, so let the lowering
          // passes decide what to do with the address
          return mkLoadv(TYPE_U32, srcToSym(src, c), ptr);
-      return mkLoadv(TYPE_U32, srcToSym(src, c), getIndirectAddress(ptr));
+      }
+      return mkLoadv(TYPE_U32, srcToSym(src, c), shiftAddress(ptr));
    case TGSI_FILE_OUTPUT:
       assert(!"load from output file");
       return NULL;
@@ -1434,7 +1438,7 @@ Converter::fetchSrc(tgsi::Instruction::SrcRegister src, int c, Value *ptr)
       return mkOp1v(OP_RDSV, TYPE_U32, getSSA(), srcToSym(src, c));
    default:
       return getArrayForFile(src.getFile(), idx2d)->load(
-         sub.cur->values, idx, swz, getIndirectAddress(ptr));
+         sub.cur->values, idx, swz, shiftAddress(ptr));
    }
 }
 
@@ -1479,7 +1483,7 @@ Converter::storeDst(int d, int c, Value *val)
 
    Value *ptr = NULL;
    if (dst.isIndirect(0))
-      ptr = getIndirectAddress(fetchSrc(dst.getIndirect(0), 0, NULL));
+      ptr = shiftAddress(fetchSrc(dst.getIndirect(0), 0, NULL));
 
    if (info->io.genUserClip > 0 &&
        dst.getFile() == TGSI_FILE_OUTPUT &&
