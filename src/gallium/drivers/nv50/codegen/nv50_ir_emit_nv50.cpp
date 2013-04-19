@@ -496,9 +496,9 @@ CodeEmitterNV50::emitForm_MAD(const Instruction *i)
    if (i->getIndirect(0, 0)) {
       assert(!i->getIndirect(1, 0));
       setAReg16(i, 0);
-   }
-   else
+   } else {
       setAReg16(i, 1);
+   }
 }
 
 // like default form, but 2nd source in slot 2, and no 3rd source
@@ -520,9 +520,9 @@ CodeEmitterNV50::emitForm_ADD(const Instruction *i)
    if (i->getIndirect(0, 0)) {
       assert(!i->getIndirect(1, 0));
       setAReg16(i, 0);
-   }
-   else
+   } else {
       setAReg16(i, 1);
+   }
 }
 
 // default short form (rr, ar, rc, gr)
@@ -612,7 +612,7 @@ CodeEmitterNV50::emitLOAD(const Instruction *i)
 
    switch (sf) {
    case FILE_SHADER_INPUT:
-      if(progType == Program::TYPE_GEOMETRY)
+      if (progType == Program::TYPE_GEOMETRY)
          code[0] = 0x11800001;
       else
          // use 'mov' where we can
