@@ -321,7 +321,7 @@ NV50LegalizeSSA::handleAddrDef(Instruction *i)
 
    i->getDef(0)->reg.size = 2; // $aX are only 16 bit
 
-   // PFETCH can always write to $a, XXX: indirect PFETCH ?
+   // PFETCH can always write to $a
    if (i->op == OP_PFETCH)
       return;
    // only ADDR <- SHL(GPR, IMM) and ADDR <- ADD(ADDR, IMM) are valid
@@ -1074,24 +1074,29 @@ bool
 NV50LoweringPreSSA::handlePFETCH(Instruction *i)
 {
    assert(prog->getType() == Program::TYPE_GEOMETRY);
-   ImmediateValue imm;
-   if (!i->src(0).getImmediate(imm))
-      return false;
-   int val0 = imm.reg.data.u32 << 2;
 
-   if (i->srcExists(1))
-   {
+   // NOTE: cannot use getImmediate here, not in SSA form yet, move to
+   // later phase if that assertion ever triggers:
+
+   ImmediateValue *imm = i->getSrc(0)->asImm();
+   assert(imm);
+
+   assert(imm->reg.data.u32 <= 127); // TODO: use address reg if that happens
+
+   if (i->srcExists(1)) {
+      // indirect addressing of vertex in primitive space
+
       LValue *val = bld.getScratch();
       Value *ptr = bld.getSSA(2, FILE_ADDRESS);
       bld.mkOp2v(OP_SHL, TYPE_U32, ptr, i->getSrc(1), bld.mkImm(2));
-      bld.mkOp2v(OP_PFETCH, TYPE_U32, val, bld.mkImm(val0), ptr);
+      bld.mkOp2v(OP_PFETCH, TYPE_U32, val, imm, ptr);
 
+      // NOTE: PFETCH directly to an $aX only works with direct addressing
       i->op = OP_SHL;
       i->setSrc(0, val);
       i->setSrc(1, bld.mkImm(0));
    }
-   else
-      i->setSrc(0, bld.mkImm(val0));
+
    return true;
 }
 
