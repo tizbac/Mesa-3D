@@ -278,24 +278,23 @@ NV50LegalizeSSA::propagateWriteToOutput(Instruction *st)
    // TODO: move exports (if beneficial) in common opt pass
    if (di->isPseudo() || isTextureOp(di->op) || di->defCount(0xff, true) > 1)
       return;
-   else if (prog->getType() == Program::TYPE_GEOMETRY) {
+
+   for (int s = 0; di->srcExists(s); ++s)
+      if (di->src(s).getFile() == FILE_IMMEDIATE)
+         return;
+
+   if (prog->getType() == Program::TYPE_GEOMETRY) {
       // Only propagate output writes in geometry shaders when we can be sure
       // that we are propagating to the same output vertex.
       if (di->bb != st->bb)
          return;
       Instruction *i;
-      for (i = di; i; i = i->next) {
-         if (i == st)
-            break;
-         else if (i->op == OP_EMIT)
+      for (i = di; i != st; i = i->next) {
+         if (i->op == OP_EMIT)
             return;
       }
-      if (!i)
-         return;
+      assert(i); // st after di
    }
-   for (int s = 0; di->srcExists(s); ++s)
-      if (di->src(s).getFile() == FILE_IMMEDIATE)
-         return;
 
    // We cannot set defs to non-lvalues before register allocation, so
    // save & remove (to save registers) the exports and replace later.
@@ -322,7 +321,7 @@ NV50LegalizeSSA::handleAddrDef(Instruction *i)
 
    i->getDef(0)->reg.size = 2; // $aX are only 16 bit
 
-   // PFETCH can always write to $a
+   // PFETCH can always write to $a, XXX: indirect PFETCH ?
    if (i->op == OP_PFETCH)
       return;
    // only ADDR <- SHL(GPR, IMM) and ADDR <- ADD(ADDR, IMM) are valid
@@ -360,6 +359,12 @@ NV50LegalizeSSA::handleAddrDef(Instruction *i)
 void
 NV50LegalizeSSA::handleMUL(Instruction *mul)
 {
+   if (mul->op == OP_MAD && mul->def(0).getFile() == FILE_GPR) {
+      // 'mad' always writes a 32-bit result
+      mul->dType = TYPE_U32;
+      assert(mul->getDef(0)->reg.size == 4);
+   }
+
    if (isFloatType(mul->sType) || typeSizeof(mul->sType) <= 2)
       return;
    Value *def = mul->getDef(0);
@@ -1020,6 +1025,11 @@ NV50LoweringPreSSA::handleEXPORT(Instruction *i)
    return true;
 }
 
+// Handle indirect addressing in geometry shaders:
+//
+// ld $r0 a[$a1][$a2+k] ->
+// ld $r0 a[($a1 + $a2 * $vstride) + k], where k *= $vstride is implicit
+//
 bool
 NV50LoweringPreSSA::handleLOAD(Instruction *i)
 {
@@ -1030,14 +1040,12 @@ NV50LoweringPreSSA::handleLOAD(Instruction *i)
       Value *addr = i->getIndirect(0, 1);
 
       if (src.isIndirect(0)) {
-         // base address is in an address register, so move to a temp
+         // base address is in an address register, so move to a GPR
          Value *base = bld.getScratch();
          bld.mkMov(base, addr);
 
-         Symbol *sym = new_Symbol(prog, FILE_SYSTEM_VALUE);
-         sym->reg.fileIndex = 0;
-         sym->setSV(nv50_ir::SV_VERTEX_STRIDE, 0);
-         Value *vstride = bld.mkOp1v(OP_RDSV, TYPE_U32, bld.getSSA(), sym);
+         Symbol *sv = bld.mkSysVal(SV_VERTEX_STRIDE, 0);
+         Value *vstride = bld.mkOp1v(OP_RDSV, TYPE_U32, bld.getSSA(), sv);
          Value *attrib = bld.mkOp2v(OP_SHL, TYPE_U32, bld.getSSA(),
                                     i->getIndirect(0, 0), bld.mkImm(2));
 
@@ -1050,7 +1058,7 @@ NV50LoweringPreSSA::handleLOAD(Instruction *i)
          Value *sum = bld.mkOp3v(OP_MAD, TYPE_U16, bld.getSSA(), a[0], b[0],
                                  base);
 
-         // move address from temp into an address register
+         // move address from GPR into an address register
          addr = bld.getSSA(2, FILE_ADDRESS);
          bld.mkMov(addr, sum);
       }
