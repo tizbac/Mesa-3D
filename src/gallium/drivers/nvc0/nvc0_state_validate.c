@@ -2,6 +2,16 @@
 #include "util/u_math.h"
 
 #include "nvc0_context.h"
+#include "nv50/nv50_defs.xml.h"
+
+static INLINE void
+nvc0_validate_zsa(struct nvc0_context *nvc0)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+
+   PUSH_SPACE(push, nvc0->zsa->size);
+   PUSH_DATAp(push, nvc0->zsa->state, nvc0->zsa->size);
+}
 
 #if 0
 static void
@@ -54,6 +64,18 @@ nvc0_validate_zcull(struct nvc0_context *nvc0)
 }
 #endif
 
+static INLINE void
+nvc0_fb_set_null_rt(struct nouveau_pushbuf *push, unsigned i)
+{
+   BEGIN_NVC0(push, NVC0_3D(RT_ADDRESS_HIGH(i)), 6);
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, 64);
+   PUSH_DATA (push, 0);
+   PUSH_DATA (push, NV50_SURFACE_FORMAT_NONE);
+   PUSH_DATA (push, 0);
+}
+
 static void
 nvc0_validate_fb(struct nvc0_context *nvc0)
 {
@@ -62,6 +84,23 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
     unsigned i;
     unsigned ms_mode = NVC0_3D_MULTISAMPLE_MODE_MS1;
     boolean serialize = FALSE;
+
+   if (nvc0->framebuffer.nr_cbufs == 0) {
+      /* XXX: Does RT_CONTROL affect speed of z-only rendering ?
+       * Set it to 0 when we can to be safe.
+       */
+      if (nvc0->zsa->pipe.alpha.enabled) {
+         /* need at least 1 RT to make alpha test work */
+         IMMED_NVC0(push, NVC0_3D(RT_CONTROL), 1);
+         nvc0_fb_set_null_rt(push, 0);
+      } else {
+         IMMED_NVC0(push, NVC0_3D(RT_CONTROL), 0);
+      }
+   }
+   if (!(nvc0->dirty & NVC0_NEW_FRAMEBUFFER)) {
+      nvc0_validate_zsa(nvc0);
+      return;
+   }
 
     nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_FB);
 
@@ -73,8 +112,15 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
 
     for (i = 0; i < fb->nr_cbufs; ++i) {
         struct nv50_surface *sf = nv50_surface(fb->cbufs[i]);
-        struct nv04_resource *res = nv04_resource(sf->base.texture);
-        struct nouveau_bo *bo = res->bo;
+        struct nv04_resource *res;
+        struct nouveau_bo *bo;
+
+        if (unlikely(!fb->cbufs[i])) {
+           nvc0_fb_set_null_rt(push, i);
+           continue;
+        }
+        res = nv04_resource(sf->base.texture);
+        bo = res->bo;
 
         BEGIN_NVC0(push, NVC0_3D(RT_ADDRESS_HIGH(i)), 9);
         PUSH_DATAh(push, res->address + sf->offset);
@@ -162,6 +208,9 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
        IMMED_NVC0(push, NVC0_3D(SERIALIZE), 0);
 
     NOUVEAU_DRV_STAT(&nvc0->screen->base, gpu_serialize_count, serialize);
+
+    if (nvc0->dirty & NVC0_NEW_ZSA)
+       nvc0_validate_zsa(nvc0);
 }
 
 static void
@@ -338,15 +387,6 @@ nvc0_validate_blend(struct nvc0_context *nvc0)
 }
 
 static void
-nvc0_validate_zsa(struct nvc0_context *nvc0)
-{
-   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
-
-   PUSH_SPACE(push, nvc0->zsa->size);
-   PUSH_DATAp(push, nvc0->zsa->state, nvc0->zsa->size);
-}
-
-static void
 nvc0_validate_rasterizer(struct nvc0_context *nvc0)
 {
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
@@ -508,9 +548,9 @@ static struct state_validate {
     void (*func)(struct nvc0_context *);
     uint32_t states;
 } validate_list[] = {
-    { nvc0_validate_fb,            NVC0_NEW_FRAMEBUFFER },
+    { nvc0_validate_fb,            NVC0_NEW_FRAMEBUFFER | NVC0_NEW_ZSA },
     { nvc0_validate_blend,         NVC0_NEW_BLEND },
-    { nvc0_validate_zsa,           NVC0_NEW_ZSA },
+/*  { nvc0_validate_zsa,           NVC0_NEW_ZSA }, */
     { nvc0_validate_sample_mask,   NVC0_NEW_SAMPLE_MASK },
     { nvc0_validate_rasterizer,    NVC0_NEW_RASTERIZER },
     { nvc0_validate_blend_colour,  NVC0_NEW_BLEND_COLOUR },
