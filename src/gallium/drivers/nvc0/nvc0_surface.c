@@ -295,6 +295,10 @@ nvc0_clear_render_target(struct pipe_context *pipe,
    PUSH_DATAf(push, color->f[2]);
    PUSH_DATAf(push, color->f[3]);
 
+   if (!(nvc0->state.rasterizer_api & 0x2)) {
+      BEGIN_NVC0(push, NVC0_3D(WINDOW_OFFSET_Y), 1);
+      PUSH_DATA (push, height);
+   }
    BEGIN_NVC0(push, NVC0_3D(SCREEN_SCISSOR_HORIZ), 2);
    PUSH_DATA (push, ( width << 16) | dstx);
    PUSH_DATA (push, (height << 16) | dsty);
@@ -378,6 +382,10 @@ nvc0_clear_depth_stencil(struct pipe_context *pipe,
 		mode |= NVC0_3D_CLEAR_BUFFERS_S;
 	}
 
+        if (!(nvc0->state.rasterizer_api & 0x2)) {
+		BEGIN_NVC0(push, NVC0_3D(WINDOW_OFFSET_Y), 1);
+		PUSH_DATA (push, height);
+	}
 	BEGIN_NVC0(push, NVC0_3D(SCREEN_SCISSOR_HORIZ), 2);
 	PUSH_DATA (push, ( width << 16) | dstx);
 	PUSH_DATA (push, (height << 16) | dsty);
@@ -948,8 +956,8 @@ nvc0_blit_3d(struct nvc0_context *nvc0, const struct pipe_blit_info *info)
    /* restore viewport */
 
    BEGIN_NVC0(push, NVC0_3D(VIEWPORT_HORIZ(0)), 2);
-   PUSH_DATA (push, nvc0->framebuffer.width << 16);
-   PUSH_DATA (push, nvc0->framebuffer.height << 16);
+   PUSH_DATA (push, nvc0->vport_int[0]);
+   PUSH_DATA (push, nvc0->vport_int[1]);
    IMMED_NVC0(push, NVC0_3D(VIEWPORT_TRANSFORM_EN), 1);
 }
 
@@ -1242,6 +1250,7 @@ nvc0_blitctx_create(struct nvc0_context *nvc0)
    nvc0->blit->nvc0 = nvc0;
 
    nvc0->blit->rast.pipe.half_pixel_center = 1;
+   nvc0->blit->rast.api = 0x2;
 
    return TRUE;
 }
