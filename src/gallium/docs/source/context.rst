@@ -74,7 +74,13 @@ objects. They all follow simple, one-method binding calls, e.g.
   be set since they will not be used.  Note that scissor xmin and ymin are
   inclusive, but  xmax and ymax are exclusive.  The inclusive ranges in x
   and y would be [xmin..xmax-1] and [ymin..ymax-1].
-* ``set_viewport_state``
+  The scissor rectangle is specified in screen coordinates and is therefore
+  affected by the lower_left_origin state in the :ref:`Rasterizer`.
+* ``set_viewport_state`` specifies the conversion of clip coordinates to
+  screen coordinates.
+  Where the pixel corresponding to the screen coordinate origin (0, 0)
+  is stored in a resource depends on the lower_left_origin state in the
+  :ref:`Rasterizer`.
 
 
 Sampler Views

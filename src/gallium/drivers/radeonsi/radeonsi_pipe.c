@@ -381,6 +381,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
 	case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
 	case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
+	case PIPE_CAP_RASTERIZER_LOWER_LEFT_ORIGIN:
 		return 0;
 
 	/* Stream output. */

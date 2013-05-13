@@ -162,6 +162,8 @@ The integer capabilities:
   state should be swizzled manually according to the swizzle in the sampler
   view it is intended to be used with, or herein undefined results may occur
   for permutational swizzles.
+* ``PIPE_CAP_RASTERIZER_LOWER_LEFT_ORIGIN``: Indicates whether the setting of
+  lower_left_origin in pipe_rasterizer_state is supported.
 
 
 .. _pipe_capf:

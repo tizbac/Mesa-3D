@@ -416,6 +416,8 @@ ilo_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return false; /* TODO */
    case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
       return 0;
+   case PIPE_CAP_RASTERIZER_LOWER_LEFT_ORIGIN:
+      return 0;
 
    default:
       return 0;
