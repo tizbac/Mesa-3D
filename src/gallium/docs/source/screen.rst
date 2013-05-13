@@ -173,6 +173,8 @@ The integer capabilities:
   viewport/scissor combination.  
 * ''PIPE_CAP_ENDIANNESS``:: The endianness of the device.  Either
   PIPE_ENDIAN_BIG or PIPE_ENDIAN_LITTLE.
+* ``PIPE_CAP_RASTERIZER_LOWER_LEFT_ORIGIN``: Indicates whether the setting of
+  lower_left_origin in pipe_rasterizer_state is supported.
 
 
 .. _pipe_capf:

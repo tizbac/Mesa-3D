@@ -423,6 +423,8 @@ ilo_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return ILO_MAX_VIEWPORTS;
    case PIPE_CAP_ENDIANNESS:
       return PIPE_ENDIAN_LITTLE;
+   case PIPE_CAP_RASTERIZER_LOWER_LEFT_ORIGIN:
+      return 0;
 
    default:
       return 0;
