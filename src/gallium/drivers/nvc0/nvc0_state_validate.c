@@ -280,38 +280,51 @@ nvc0_validate_scissor(struct nvc0_context *nvc0)
 static void
 nvc0_validate_viewport(struct nvc0_context *nvc0)
 {
-    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
-    struct pipe_viewport_state *vp = &nvc0->viewport;
-    int x, y, w, h;
-    float zmin, zmax;
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   struct pipe_viewport_state *vp = &nvc0->viewport;
+   int x, y, w, h;
+   float zmin, zmax;
 
-    BEGIN_NVC0(push, NVC0_3D(VIEWPORT_TRANSLATE_X(0)), 3);
-    PUSH_DATAf(push, vp->translate[0]);
-    PUSH_DATAf(push, vp->translate[1]);
-    PUSH_DATAf(push, vp->translate[2]);
-    BEGIN_NVC0(push, NVC0_3D(VIEWPORT_SCALE_X(0)), 3);
-    PUSH_DATAf(push, vp->scale[0]);
-    PUSH_DATAf(push, vp->scale[1]);
-    PUSH_DATAf(push, vp->scale[2]);
+   if (likely(vp->scale[3] != 0.0f)) {
+      if (!nvc0->state.vport_enable) {
+         nvc0->state.vport_enable = TRUE;
+         IMMED_NVC0(push, NVC0_3D(VIEWPORT_TRANSFORM_EN), 1);
+      }
+      BEGIN_NVC0(push, NVC0_3D(VIEWPORT_TRANSLATE_X(0)), 3);
+      PUSH_DATAf(push, vp->translate[0]);
+      PUSH_DATAf(push, vp->translate[1]);
+      PUSH_DATAf(push, vp->translate[2]);
+      BEGIN_NVC0(push, NVC0_3D(VIEWPORT_SCALE_X(0)), 3);
+      PUSH_DATAf(push, vp->scale[0]);
+      PUSH_DATAf(push, vp->scale[1]);
+      PUSH_DATAf(push, vp->scale[2]);
 
-    /* now set the viewport rectangle to viewport dimensions for clipping */
+      x = util_iround(MAX2(0.0f, vp->translate[0] - fabsf(vp->scale[0])));
+      y = util_iround(MAX2(0.0f, vp->translate[1] - fabsf(vp->scale[1])));
+      w = util_iround(vp->translate[0] + fabsf(vp->scale[0])) - x;
+      h = util_iround(vp->translate[1] + fabsf(vp->scale[1])) - y;
 
-    x = util_iround(MAX2(0.0f, vp->translate[0] - fabsf(vp->scale[0])));
-    y = util_iround(MAX2(0.0f, vp->translate[1] - fabsf(vp->scale[1])));
-    w = util_iround(vp->translate[0] + fabsf(vp->scale[0])) - x;
-    h = util_iround(vp->translate[1] + fabsf(vp->scale[1])) - y;
+      zmin = vp->translate[2] - fabsf(vp->scale[2]);
+      zmax = vp->translate[2] + fabsf(vp->scale[2]);
 
-    zmin = vp->translate[2] - fabsf(vp->scale[2]);
-    zmax = vp->translate[2] + fabsf(vp->scale[2]);
+      nvc0->vport_int[0] = (w << 16) | x;
+      nvc0->vport_int[1] = (h << 16) | y;
+   } else {
+      if (nvc0->state.vport_enable) {
+         nvc0->state.vport_enable = FALSE;
+         IMMED_NVC0(push, NVC0_3D(VIEWPORT_TRANSFORM_EN), 0);
+      }
+      nvc0->vport_int[0] = 0xffff0000; /* guard band ? */
+      nvc0->vport_int[1] = 0xffff0000;
+   }
 
-    nvc0->vport_int[0] = (w << 16) | x;
-    nvc0->vport_int[1] = (h << 16) | y;
+   /* now set the viewport rectangle to viewport dimensions for clipping */
 
-    BEGIN_NVC0(push, NVC0_3D(VIEWPORT_HORIZ(0)), 2);
-    PUSH_DATA (push, nvc0->vport_int[0]);
-    PUSH_DATA (push, nvc0->vport_int[1]);
-    BEGIN_NVC0(push, NVC0_3D(DEPTH_RANGE_NEAR(0)), 2);
-    PUSH_DATAf(push, zmin);
+   BEGIN_NVC0(push, NVC0_3D(VIEWPORT_HORIZ(0)), 2);
+   PUSH_DATA (push, nvc0->vport_int[0]);
+   PUSH_DATA (push, nvc0->vport_int[1]);
+   BEGIN_NVC0(push, NVC0_3D(DEPTH_RANGE_NEAR(0)), 2);
+   PUSH_DATAf(push, zmin);
     PUSH_DATAf(push, zmax);
 }
 
