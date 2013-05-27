@@ -316,6 +316,9 @@ nvc0_validate_viewport(struct nvc0_context *nvc0)
       }
       nvc0->vport_int[0] = 0xffff0000; /* guard band ? */
       nvc0->vport_int[1] = 0xffff0000;
+
+      zmin = 0.0f;
+      zmax = 1.0f;
    }
 
    /* now set the viewport rectangle to viewport dimensions for clipping */
@@ -325,7 +328,7 @@ nvc0_validate_viewport(struct nvc0_context *nvc0)
    PUSH_DATA (push, nvc0->vport_int[1]);
    BEGIN_NVC0(push, NVC0_3D(DEPTH_RANGE_NEAR(0)), 2);
    PUSH_DATAf(push, zmin);
-    PUSH_DATAf(push, zmax);
+   PUSH_DATAf(push, zmax);
 }
 
 static INLINE void
