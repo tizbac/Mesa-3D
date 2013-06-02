@@ -237,6 +237,9 @@ NineDevice9_ctor( struct NineDevice9 *This,
 
     ID3DPresentFactory_Release(This->present);
 
+    list_inithead(&This->used_textures);
+    list_inithead(&This->used_surfaces);
+
     return D3D_OK;
 }
 
@@ -936,6 +939,9 @@ NineDevice9_UpdateSurface( struct NineDevice9 *This,
 
     user_assert(dst->desc.MultiSampleType == D3DMULTISAMPLE_NONE, D3DERR_INVALIDCALL);
     user_assert(src->desc.MultiSampleType == D3DMULTISAMPLE_NONE, D3DERR_INVALIDCALL);
+
+    list_del(&dst->use_list);
+    list_add(&dst->use_list, &This->used_surfaces);
 
     return NineSurface9_CopySurface(dst, src, pDestPoint, pSourceRect);
 }

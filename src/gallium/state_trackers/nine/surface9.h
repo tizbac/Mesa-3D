@@ -51,6 +51,8 @@ struct NineSurface9
 
     /* wine doesn't even use these, 2 will be enough */
     struct u_rect dirty_rects[2];
+
+    struct list_head use_list;
 };
 static INLINE struct NineSurface9 *
 NineSurface9( void *data )

@@ -23,6 +23,8 @@
 #include "swapchain9.h"
 #include "surface9.h"
 #include "device9.h"
+#include "basetexture9.h"
+#include "surface9.h"
 
 #include "nine_helpers.h"
 #include "nine_pipe.h"
@@ -370,6 +372,100 @@ present( struct NineSwapChain9 *This,
         blit.alpha_blend = TRUE;
         This->pipe->blit(This->pipe, &blit);
     }
+
+if (getenv("NINE_SHOWSURF")) {
+    /* Blit used textures to screen so I can see what's going on. */
+    {
+    struct NineBaseTexture9 *tex;
+    int n = 0;
+    int max_tex_x =
+        ((rect.right + (pDestRect ? pDestRect->right : 0)) -
+         (rect.left + (pDestRect ? pDestRect->left : 0))) / 128;
+    DBG("max_tex_x = %i\n", max_tex_x);
+    LIST_FOR_EACH_ENTRY(tex, &device->used_textures, use_list)
+    {
+        struct pipe_sampler_view *srv = tex->view;
+        struct pipe_resource *res = tex->base.resource;
+        struct pipe_resource *inf = &tex->base.info;
+        unsigned l;
+        DBG("used texture %p (%s %s, resource=%p, SRV=%p, lod=%u of %u, resident=%u)\n", tex,
+            nine_D3DRTYPE_to_str(tex->base.type),
+            nine_D3DPOOL_to_str(tex->base.pool),
+            tex->base.resource,
+            srv, tex->lod, inf->last_level,
+            tex->base.pool == D3DPOOL_MANAGED ? tex->lod_resident : 0);
+        if (!tex->base.resource || !srv)
+            continue;
+        DBG("RES: %ux%ux%u of %ux%ux%u\n",
+            res->width0, res->height0, res->depth0,
+            inf->width0, inf->height0, inf->depth0);
+        DBG("SRV: levels=%u..%u layers=%u..%u format=%s(%s) rgba=%u,%u,%u,%u\n",
+            srv->u.tex.first_level,srv->u.tex.last_level,
+            srv->u.tex.first_layer,srv->u.tex.last_layer,
+            util_format_name(srv->format), d3dformat_to_string(tex->format),
+            srv->swizzle_r,srv->swizzle_g,srv->swizzle_b,srv->swizzle_a);
+        l = srv->u.tex.first_level;
+        blit.src.resource = srv->texture;
+        blit.src.level = srv->u.tex.first_level;
+        blit.src.format = srv->format;
+        u_box_2d_zslice(0, 0, srv->u.tex.first_layer,
+                        u_minify(res->width0, l),
+                        u_minify(res->height0, l), &blit.src.box);
+        u_box_2d(rect.left + pDestRect ? pDestRect->left : 0,
+                 rect.top  + pDestRect ? pDestRect->top  : 0, 128, 128, &blit.dst.box);
+        blit.dst.box.x += (n % max_tex_x) * 128;
+        blit.dst.box.y += (n / max_tex_x) * 128;
+        blit.alpha_blend = FALSE;
+        blit.filter = PIPE_TEX_FILTER_LINEAR;
+        n++;
+        DBG("blit to %u,%u\n", blit.dst.box.x, blit.dst.box.y);
+        This->pipe->blit(This->pipe, &blit);
+    }
+    }
+#if 1
+    /* And used surfaces. */
+    {
+    struct NineSurface9 *srf;
+    int n = 0;
+    int max_srf_x =
+        ((rect.right + (pDestRect ? pDestRect->right : 0)) -
+         (rect.left + (pDestRect ? pDestRect->left : 0))) / 128;
+    DBG("max_srf_x = %i\n", max_srf_x);
+    LIST_FOR_EACH_ENTRY(srf, &device->used_surfaces, use_list)
+    {
+        struct pipe_resource *res = srf->base.resource;
+        struct pipe_resource *inf = &srf->base.info;
+        unsigned l;
+        DBG("used surface %p (%s %s, resource=%p, level=%u, actual %u)\n", srf,
+            nine_D3DRTYPE_to_str(srf->base.type),
+            nine_D3DPOOL_to_str(srf->base.pool),
+            res,
+            srf->level, srf->level_actual);
+        if (!res)
+            continue;
+        DBG("RES: %ux%ux%u of %ux%ux%u\n",
+            res->width0, res->height0, res->depth0,
+            inf->width0, inf->height0, inf->depth0);
+        DBG("SRF: format=%s(%s)\n",
+            util_format_name(inf->format), d3dformat_to_string(srf->desc.Format));
+        l = srf->level_actual;
+        blit.src.resource = res;
+        blit.src.level = l;
+        blit.src.format = inf->format;
+        u_box_2d_zslice(0, 0, srf->layer, srf->desc.Width, srf->desc.Height, &blit.src.box);
+        u_box_2d(rect.left + pDestRect ? pDestRect->left : 0,
+                 rect.top  + pDestRect ? pDestRect->top  : 0, 128, 128, &blit.dst.box);
+        blit.dst.box.x += (n % max_srf_x) * 128;
+        blit.dst.box.y += (n / max_srf_x) * 128;
+        blit.alpha_blend = FALSE;
+        blit.filter = PIPE_TEX_FILTER_LINEAR;
+        n++;
+        DBG("blit to %u,%u\n", blit.dst.box.x, blit.dst.box.y);
+        This->pipe->blit(This->pipe, &blit);
+    }
+    }
+#endif
+} // getenv
 
     This->pipe->flush(This->pipe, NULL, 0);
 

@@ -25,6 +25,7 @@
 
 #include "resource9.h"
 #include "util/u_inlines.h"
+#include "util/u_double_list.h"
 
 struct NineBaseTexture9
 {
@@ -42,6 +43,8 @@ struct NineBaseTexture9
 
     boolean dirty;
     boolean dirty_mip;
+
+    struct list_head use_list;
 };
 static INLINE struct NineBaseTexture9 *
 NineBaseTexture9( void *data )

@@ -64,6 +64,8 @@ NineBaseTexture9_ctor( struct NineBaseTexture9 *This,
     This->lod = 0;
     This->lod_resident = -1;
 
+    list_inithead(&This->use_list);
+
     return D3D_OK;
 }
 

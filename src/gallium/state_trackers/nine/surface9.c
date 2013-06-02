@@ -149,6 +149,8 @@ NineSurface9_ctor( struct NineSurface9 *This,
             pResource->flags |= NINE_RESOURCE_FLAG_LOCKABLE;
     }
 
+    list_inithead(&This->use_list);
+
     NineSurface9_Dump(This);
 
     return D3D_OK;
@@ -547,6 +549,9 @@ NineSurface9_CopySurface( struct NineSurface9 *This,
     uint8_t *p_dst;
     const uint8_t *p_src;
 
+    DBG("This=%p From=%p pDestPoint=%p pSourceRect=%p\n",
+        This, From, pDestPoint, pSourceRect);
+
     user_assert(This->desc.Format == From->desc.Format, D3DERR_INVALIDCALL);
 
     dst_box.x = pDestPoint ? pDestPoint->x : 0;
@@ -602,6 +607,7 @@ NineSurface9_CopySurface( struct NineSurface9 *This,
     }
 
     if (r_dst && r_src) {
+        DBG("rcr\n");
         pipe->resource_copy_region(pipe,
                                    r_dst, This->level,
                                    dst_box.x, dst_box.y, dst_box.z,
@@ -609,6 +615,11 @@ NineSurface9_CopySurface( struct NineSurface9 *This,
                                    &src_box);
     } else
     if (r_dst) {
+        DBG("inline_write(%p, level=%u, (%u,%u) (%ux%ux%u) stride=%u, %s->%s)\n",
+            r_dst, This->level,
+            dst_box.x, dst_box.y, dst_box.width, dst_box.height, dst_box.depth,
+            From->stride,
+            util_format_name(From->base.info.format), util_format_name(r_dst->format));
         p_src = NineSurface9_GetSystemMemPointer(From, src_box.x, src_box.y);
 
         pipe->transfer_inline_write(pipe, r_dst, This->level,
@@ -624,6 +635,11 @@ NineSurface9_CopySurface( struct NineSurface9 *This,
         if (!p_src)
             return D3DERR_DRIVERINTERNALERROR;
 
+        DBG("u_copy_rect(%s(%u,%u)(%ux%u)<-%s(%u,%u)\n",
+            util_format_name(This->base.info.format), dst_box.x, dst_box.y,
+            dst_box.width, dst_box.height,
+            util_format_name(From->base.info.format), src_box.x, src_box.y);
+
         util_copy_rect(p_dst, This->base.info.format,
                        This->stride, dst_box.x, dst_box.y,
                        dst_box.width, dst_box.height,
@@ -635,6 +651,7 @@ NineSurface9_CopySurface( struct NineSurface9 *This,
         p_dst = NineSurface9_GetSystemMemPointer(This, 0, 0);
         p_src = NineSurface9_GetSystemMemPointer(From, 0, 0);
 
+        DBG("sys2sys\n");
         util_copy_rect(p_dst, This->base.info.format,
                        This->stride, dst_box.x, dst_box.y,
                        dst_box.width, dst_box.height,

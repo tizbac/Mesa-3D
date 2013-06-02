@@ -34,6 +34,8 @@
 
 #include "d3dpresent.h"
 
+#include "util/u_double_list.h"
+
 struct gen_mipmap_state;
 struct util_hash_table;
 struct pipe_screen;
@@ -100,6 +102,9 @@ struct NineDevice9
         BOOL visible;
         boolean software;
     } cursor;
+
+    struct list_head used_textures;
+    struct list_head used_surfaces;
 };
 static INLINE struct NineDevice9 *
 NineDevice9( void *data )

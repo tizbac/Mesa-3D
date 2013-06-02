@@ -155,8 +155,11 @@ update_vertex_elements(struct NineDevice9 *device)
 
     vs = device->state.vs ? device->state.vs : device->ff.vs;
 
-    if (!vdecl) /* no inputs */
+    if (!vdecl) {/* no inputs */
+        DBG("no vertex declaration\n");
         return;
+    }
+    DBG("vs->num_inputs: %u\n", vs->num_inputs);
     for (n = 0; n < vs->num_inputs; ++n) {
         DBG("looking up input %u (usage %u) from vdecl(%p)\n",
             n, vs->input_map[n].ndecl, vdecl);
@@ -205,6 +208,10 @@ update_constants(struct NineDevice9 *device, unsigned shader_type)
     unsigned x;
     const struct nine_lconstf *lconstf;
 
+    box.y = 0;
+    box.z = 0;
+    box.height = 1;
+    box.depth = 1;
     if (shader_type == PIPE_SHADER_VERTEX) {
         DBG("VS\n");
         buf = device->constbuf_vs;
@@ -240,11 +247,12 @@ update_constants(struct NineDevice9 *device, unsigned shader_type)
 
         lconstf = &device->state.ps->lconstf;
     }
-    box.y = 0;
-    box.z = 0;
-    box.height = 1;
-    box.depth = 1;
-
+#if 0
+    box.x = 0;
+    box.width = NINE_MAX_CONST_F * 16;
+    pipe->transfer_inline_write(pipe, buf, 0, usage, &box, lconstf, 0, 0);
+    return;
+#endif
     /* write range from min to max changed, it's not much data */
     /* bool1 */
     if (dirty_b) {
@@ -395,6 +403,9 @@ update_textures_and_samplers(struct NineDevice9 *device)
             continue;
         }
         view[i] = NineBaseTexture9_GetSamplerView(state->texture[s]);
+
+        list_del(&state->texture[s]->use_list);
+        list_add(&state->texture[s]->use_list, &device->used_textures);
 
         num_textures = i + 1;
 
