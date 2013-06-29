@@ -676,6 +676,9 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 
 	case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
 		return PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_R600;
+
+	case PIPE_CAP_DEVICE_MEMORY_SIZE:
+		return rscreen->info.vram_size >> 20;
 	}
 	return 0;
 }
