@@ -29,6 +29,7 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src/gallium/drivers \
 	-I$(top_srcdir)/include \
 	$(GALLIUM_CFLAGS) \
-	$(NOUVEAU_CFLAGS)
+	$(NOUVEAU_CFLAGS) \
+	$(VISIBILITY_CFLAGS)
 
 libnvc0_la_SOURCES = $(C_SOURCES) $(CPP_SOURCES)

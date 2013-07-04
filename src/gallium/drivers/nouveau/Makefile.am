@@ -30,6 +30,7 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src/gallium/drivers \
 	-I$(top_srcdir)/include \
 	$(GALLIUM_CFLAGS) \
+	$(VISIBILITY_CFLAGS) \
 	$(LIBDRM_CFLAGS)
 
 libnouveau_la_SOURCES = $(C_SOURCES)
