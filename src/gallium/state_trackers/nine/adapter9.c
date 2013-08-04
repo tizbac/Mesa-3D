@@ -499,7 +499,7 @@ NineAdapter9_GetDeviceCaps( struct NineAdapter9 *This,
                    D3DCAPS2_DYNAMICTEXTURES |
                    D3DCAPS2_CANAUTOGENMIPMAP;
 
-    pCaps->Caps3 = /*D3DCAPS3_ALPHA_FULLSCREEN_FLIP_OR_DISCARD |*/
+    pCaps->Caps3 = D3DCAPS3_ALPHA_FULLSCREEN_FLIP_OR_DISCARD |
                    /*D3DCAPS2_FULLSCREENGAMMA |*/
                    D3DCAPS3_COPY_TO_VIDMEM |
                    D3DCAPS3_COPY_TO_SYSTEMMEM |
