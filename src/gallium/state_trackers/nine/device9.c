@@ -1320,13 +1320,13 @@ NineDevice9_StretchRect( struct NineDevice9 *This,
                     D3DERR_INVALIDCALL);
 
         pipe->blit(pipe, &blit);
-    } else {
+    } else {	
         assert(blit.dst.box.x >= 0 && blit.dst.box.y >= 0 &&
                blit.src.box.x >= 0 && blit.src.box.y >= 0 &&
                blit.dst.box.x + blit.dst.box.width <= dst->desc.Width &&
                blit.src.box.x + blit.src.box.width <= src->desc.Width &&
-               blit.dst.box.x + blit.dst.box.height <= dst->desc.Height &&
-               blit.src.box.x + blit.src.box.height <= src->desc.Height);
+               blit.dst.box.y + blit.dst.box.height <= dst->desc.Height &&
+               blit.src.box.y + blit.src.box.height <= src->desc.Height);
         /* Or drivers might crash ... */
         DBG("Using resource_copy_region.\n");
         pipe->resource_copy_region(pipe,
