@@ -26,7 +26,7 @@
 #include "present.h"
 
 #ifndef __cplusplus
-typedef void (* resetDeviceCallback)(void*,void*);
+
 /* Representation of an adapter group, although since this is implemented by
  * the driver, it knows nothing about the windowing system it's on */
 typedef struct ID3DAdapter9Vtbl
@@ -44,8 +44,8 @@ typedef struct ID3DAdapter9Vtbl
     HRESULT (WINAPI *CheckDepthStencilMatch)(ID3DAdapter9 *This, D3DDEVTYPE DeviceType, D3DFORMAT AdapterFormat, D3DFORMAT RenderTargetFormat, D3DFORMAT DepthStencilFormat);
     HRESULT (WINAPI *CheckDeviceFormatConversion)(ID3DAdapter9 *This, D3DDEVTYPE DeviceType, D3DFORMAT SourceFormat, D3DFORMAT TargetFormat);
     HRESULT (WINAPI *GetDeviceCaps)(ID3DAdapter9 *This, D3DDEVTYPE DeviceType, D3DCAPS9 *pCaps);
-    HRESULT (WINAPI *CreateDevice)(ID3DAdapter9 *This, UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9 *pD3D9, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9 **ppReturnedDeviceInterface, resetDeviceCallback resetcb);
-    HRESULT (WINAPI *CreateDeviceEx)(ID3DAdapter9 *This, UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9Ex *pD3D9Ex, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9Ex **ppReturnedDeviceInterface, resetDeviceCallback resetcb);
+    HRESULT (WINAPI *CreateDevice)(ID3DAdapter9 *This, UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9 *pD3D9, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9 **ppReturnedDeviceInterface);
+    HRESULT (WINAPI *CreateDeviceEx)(ID3DAdapter9 *This, UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9Ex *pD3D9Ex, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9Ex **ppReturnedDeviceInterface);
 } ID3DAdapter9Vtbl;
 
 struct ID3DAdapter9
@@ -65,8 +65,8 @@ struct ID3DAdapter9
 #define ID3DAdapter9_CheckDepthStencilMatch(p,a,b,c,d) (p)->lpVtbl->CheckDepthStencilMatch(p,a,b,c,d)
 #define ID3DAdapter9_CheckDeviceFormatConversion(p,a,b,c) (p)->lpVtbl->CheckDeviceFormatConversion(p,a,b,c)
 #define ID3DAdapter9_GetDeviceCaps(p,a,b) (p)->lpVtbl->GetDeviceCaps(p,a,b)
-#define ID3DAdapter9_CreateDevice(p,a,b,c,d,e,f,g,h) (p)->lpVtbl->CreateDevice(p,a,b,c,d,e,f,g,h)
-#define ID3DAdapter9_CreateDeviceEx(p,a,b,c,d,e,f,g,h) (p)->lpVtbl->CreateDeviceEx(p,a,b,c,d,e,f,g,h)
+#define ID3DAdapter9_CreateDevice(p,a,b,c,d,e,f,g) (p)->lpVtbl->CreateDevice(p,a,b,c,d,e,f,g)
+#define ID3DAdapter9_CreateDeviceEx(p,a,b,c,d,e,f,g) (p)->lpVtbl->CreateDeviceEx(p,a,b,c,d,e,f,g)
 
 #else /* __cplusplus */
 
@@ -79,8 +79,8 @@ struct ID3DAdapter9 : public IUnknown
     HRESULT WINAPI CheckDepthStencilMatch(D3DDEVTYPE DeviceType, D3DFORMAT AdapterFormat, D3DFORMAT RenderTargetFormat, D3DFORMAT DepthStencilFormat);
     HRESULT WINAPI CheckDeviceFormatConversion(D3DDEVTYPE DeviceType, D3DFORMAT SourceFormat, D3DFORMAT TargetFormat);
     HRESULT WINAPI GetDeviceCaps(D3DDEVTYPE DeviceType, D3DCAPS9 *pCaps);
-    HRESULT WINAPI CreateDevice(UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9 *pD3D9, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9 **ppReturnedDeviceInterface, resetDeviceCallback resetcb);
-    HRESULT WINAPI CreateDeviceEx(UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9Ex *pD3D9Ex, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9Ex **ppReturnedDeviceInterface, resetDeviceCallback resetcb);
+    HRESULT WINAPI CreateDevice(UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9 *pD3D9, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9 **ppReturnedDeviceInterface);
+    HRESULT WINAPI CreateDeviceEx(UINT RealAdapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, IDirect3D9Ex *pD3D9Ex, ID3DPresentGroup *pPresentationFactory, IDirect3DDevice9Ex **ppReturnedDeviceInterface);
 };
 
 #endif /* __cplusplus */
