@@ -29,7 +29,7 @@
 
 struct pipe_screen;
 struct pipe_resource;
-typedef void (* resetDeviceCallback)(void*,void*);
+
 struct d3dadapter9_context
 {
     struct pipe_screen *hal, *ref;
