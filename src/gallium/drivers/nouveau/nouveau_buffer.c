@@ -622,15 +622,7 @@ nouveau_buffer_transfer_inline_write(struct pipe_context *pipe,
        box->width < (1 << 12)) {
       nv->push_cb(nv, nv04_resource(resource), box->x, box->width / 4, data);
    } else {
-      usage |= (box->x == 0 && box->width == resource->width0) ?
-         PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE :
-         PIPE_TRANSFER_DISCARD_RANGE;
-
-      map = nouveau_buffer_transfer_map(pipe, resource, 0, usage, box, &transfer);
-      if (map) {
-         memcpy(map, data, box->width);
-         nouveau_buffer_transfer_unmap(pipe, transfer);
-      }
+      u_default_transfer_inline_write(pipe,resource,level,usage,box,data,stride,layer_stride);
    }
 }
 
