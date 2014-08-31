@@ -925,7 +925,7 @@ NineAdapter9_CreateDevice( struct NineAdapter9 *This,
                            DWORD BehaviorFlags,
                            IDirect3D9 *pD3D9,
                            ID3DPresentGroup *pPresentationGroup,
-                           IDirect3DDevice9 **ppReturnedDeviceInterface ,resetDeviceCallback resetcb )
+                           IDirect3DDevice9 **ppReturnedDeviceInterface )
 {
     struct pipe_screen *screen;
     D3DDEVICE_CREATION_PARAMETERS params;
@@ -957,7 +957,7 @@ NineAdapter9_CreateDevice( struct NineAdapter9 *This,
 
     hr = NineDevice9_new(screen, &params, &caps, pD3D9,
                          pPresentationGroup, This->ctx,
-                         (struct NineDevice9 **)ppReturnedDeviceInterface,resetcb);
+                         (struct NineDevice9 **)ppReturnedDeviceInterface);
     if (FAILED(hr)) {
         DBG("Failed to create device.\n");
         return hr;
@@ -975,7 +975,7 @@ NineAdapter9_CreateDeviceEx( struct NineAdapter9 *This,
                              DWORD BehaviorFlags,
                              IDirect3D9Ex *pD3D9Ex,
                              ID3DPresentGroup *pPresentationGroup,
-                             IDirect3DDevice9Ex **ppReturnedDeviceInterface, resetDeviceCallback resetcb )
+                             IDirect3DDevice9Ex **ppReturnedDeviceInterface )
 {
     struct pipe_screen *screen;
     D3DDEVICE_CREATION_PARAMETERS params;
@@ -1007,7 +1007,7 @@ NineAdapter9_CreateDeviceEx( struct NineAdapter9 *This,
 
     hr = NineDevice9Ex_new(screen, &params, &caps, pD3D9Ex,
                            pPresentationGroup, This->ctx,
-                           (struct NineDevice9Ex **)ppReturnedDeviceInterface,resetcb);
+                           (struct NineDevice9Ex **)ppReturnedDeviceInterface);
     if (FAILED(hr)) {
         DBG("Failed to create device.\n");
         return hr;

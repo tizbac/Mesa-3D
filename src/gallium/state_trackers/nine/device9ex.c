@@ -35,13 +35,13 @@ NineDevice9Ex_ctor( struct NineDevice9Ex *This,
                     D3DCAPS9 *pCaps,
                     IDirect3D9Ex *pD3D9Ex,
                     ID3DPresentGroup *pPresentationGroup,
-                    struct d3dadapter9_context *pCTX, resetDeviceCallback resetcb )
+                    struct d3dadapter9_context *pCTX )
 {
     This->base.ex = TRUE;
 
     return NineDevice9_ctor(&This->base, pParams,
                             pScreen, pCreationParameters, pCaps,
-                            (IDirect3D9 *)pD3D9Ex, pPresentationGroup, pCTX, resetcb);
+                            (IDirect3D9 *)pD3D9Ex, pPresentationGroup, pCTX);
 }
 
 static void
@@ -351,13 +351,13 @@ NineDevice9Ex_new( struct pipe_screen *pScreen,
                    IDirect3D9Ex *pD3D9Ex,
                    ID3DPresentGroup *pPresentationGroup,
                    struct d3dadapter9_context *pCTX,
-                   struct NineDevice9Ex **ppOut , resetDeviceCallback resetcb )
+                   struct NineDevice9Ex **ppOut )
 {
     BOOL lock;
     lock = !!(pCreationParameters->BehaviorFlags & D3DCREATE_MULTITHREADED);
 
     NINE_NEW(Device9Ex, ppOut, lock,
              pScreen, pCreationParameters, pCaps,
-             pD3D9Ex, pPresentationGroup, pCTX, resetcb);
+             pD3D9Ex, pPresentationGroup, pCTX);
 }
 

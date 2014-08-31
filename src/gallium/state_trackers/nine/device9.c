@@ -138,7 +138,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
                   D3DCAPS9 *pCaps,
                   IDirect3D9 *pD3D9,
                   ID3DPresentGroup *pPresentationGroup,
-                  struct d3dadapter9_context *pCTX ,resetDeviceCallback resetcb)
+                  struct d3dadapter9_context *pCTX )
 {
     unsigned i;
     HRESULT hr = NineUnknown_ctor(&This->base, pParams);
@@ -151,8 +151,6 @@ NineDevice9_ctor( struct NineDevice9 *This,
     This->d3d9 = pD3D9;
     This->params = *pCreationParameters;
     This->present = pPresentationGroup;
-
-    This->resetcb = resetcb;
     IDirect3D9_AddRef(This->d3d9);
     ID3DPresentGroup_AddRef(This->present);
 
@@ -619,8 +617,6 @@ NineDevice9_Reset( struct NineDevice9 *This,
         This, 0, (IDirect3DSurface9 *)This->swapchains[0]->buffers[0]);
     /* XXX: better use GetBackBuffer here ? */
 
-    if ( This->resetcb )
-        This->resetcb(This->d3d9,pPresentationParameters);
     return hr;
 }
 
@@ -3439,12 +3435,12 @@ NineDevice9_new( struct pipe_screen *pScreen,
                  IDirect3D9 *pD3D9,
                  ID3DPresentGroup *pPresentationGroup,
                  struct d3dadapter9_context *pCTX,
-                 struct NineDevice9 **ppOut ,resetDeviceCallback resetcb)
+                 struct NineDevice9 **ppOut )
 {
     BOOL lock;
     lock = !!(pCreationParameters->BehaviorFlags & D3DCREATE_MULTITHREADED);
 
     NINE_NEW(Device9, ppOut, lock, /* args */
              pScreen, pCreationParameters, pCaps,
-             pD3D9, pPresentationGroup, pCTX, resetcb);
+             pD3D9, pPresentationGroup, pCTX);
 }

@@ -117,8 +117,6 @@ struct NineDevice9
     struct nine_range_pool range_pool;
 
     struct hud_context *hud; /* NULL if hud is disabled */
-
-    resetDeviceCallback resetcb;
 };
 static INLINE struct NineDevice9 *
 NineDevice9( void *data )
@@ -133,7 +131,7 @@ NineDevice9_new( struct pipe_screen *pScreen,
                  IDirect3D9 *pD3D9,
                  ID3DPresentGroup *pPresentationGroup,
                  struct d3dadapter9_context *pCTX,
-                 struct NineDevice9 **ppOut,resetDeviceCallback resetcb );
+                 struct NineDevice9 **ppOut );
 
 HRESULT
 NineDevice9_ctor( struct NineDevice9 *This,
@@ -143,7 +141,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
                   D3DCAPS9 *pCaps,
                   IDirect3D9 *pD3D9,
                   ID3DPresentGroup *pPresentationGroup,
-                  struct d3dadapter9_context *pCTX , resetDeviceCallback resetcb);
+                  struct d3dadapter9_context *pCTX );
 
 void
 NineDevice9_dtor( struct NineDevice9 *This );

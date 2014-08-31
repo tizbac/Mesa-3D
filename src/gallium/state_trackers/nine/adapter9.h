@@ -29,7 +29,7 @@
 
 struct pipe_screen;
 struct pipe_resource;
-typedef void (* resetDeviceCallback)(void*,void*);
+
 struct d3dadapter9_context
 {
     struct pipe_screen *hal, *ref;
@@ -136,7 +136,7 @@ NineAdapter9_CreateDevice( struct NineAdapter9 *This,
                            DWORD BehaviorFlags,
                            IDirect3D9 *pD3D9,
                            ID3DPresentGroup *pPresentationGroup,
-                           IDirect3DDevice9 **ppReturnedDeviceInterface , resetDeviceCallback resetcb);
+                           IDirect3DDevice9 **ppReturnedDeviceInterface );
 
 HRESULT WINAPI
 NineAdapter9_CreateDeviceEx( struct NineAdapter9 *This,
@@ -146,6 +146,6 @@ NineAdapter9_CreateDeviceEx( struct NineAdapter9 *This,
                              DWORD BehaviorFlags,
                              IDirect3D9Ex *pD3D9Ex,
                              ID3DPresentGroup *pPresentationGroup,
-                             IDirect3DDevice9Ex **ppReturnedDeviceInterface ,resetDeviceCallback resetcb);
+                             IDirect3DDevice9Ex **ppReturnedDeviceInterface );
 
 #endif /* _NINE_ADAPTER9_H_ */
