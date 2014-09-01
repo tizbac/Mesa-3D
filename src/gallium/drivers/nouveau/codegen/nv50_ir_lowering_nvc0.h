@@ -116,7 +116,6 @@ private:
 
    Value *loadResInfo32(Value *ptr, uint32_t off);
    Value *loadMsInfo32(Value *ptr, uint32_t off);
-   Value *loadFCoordAdj32(uint32_t off);
    Value *loadTexHandle(Value *ptr, unsigned int slot);
 
    void adjustCoordinatesMS(TexInstruction *);
