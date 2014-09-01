@@ -584,12 +584,13 @@ CodeEmitterNVC0::emitFADD(const Instruction *i)
 {
    if (i->encSize == 8) {
       if (isLIMM(i->src(1), TYPE_F32)) {
-         assert(!i->saturate);
+         
          emitForm_A(i, HEX64(28000000, 00000002));
 
          code[0] |= i->src(0).mod.abs() << 7;
          code[0] |= i->src(0).mod.neg() << 9;
-
+		 if (i->saturate)
+            code[1] |= 1 << 5;
          if (i->src(1).mod.abs())
             code[1] &= 0xfdffffff;
          if ((i->op == OP_SUB) != static_cast<bool>(i->src(1).mod.neg()))
