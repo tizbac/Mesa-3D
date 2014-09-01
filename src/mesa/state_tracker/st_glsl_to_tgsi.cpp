@@ -446,7 +446,6 @@ public:
               int mul_operand);
    bool try_emit_mad_for_and_not(ir_expression *ir,
               int mul_operand);
-   bool try_emit_sat(ir_expression *ir);
 
    void emit_swz(ir_expression *ir);
 
@@ -1270,53 +1269,6 @@ glsl_to_tgsi_visitor::try_emit_mad_for_and_not(ir_expression *ir, int try_operan
    return true;
 }
 
-bool
-glsl_to_tgsi_visitor::try_emit_sat(ir_expression *ir)
-{
-   /* Emit saturates in the vertex shader only if SM 3.0 is supported.
-    */
-   if (this->prog->Target == GL_VERTEX_PROGRAM_ARB &&
-       !st_context(this->ctx)->has_shader_model3) {
-      return false;
-   }
-
-   ir_rvalue *sat_src = ir->as_rvalue_to_saturate();
-   if (!sat_src)
-      return false;
-
-   sat_src->accept(this);
-   st_src_reg src = this->result;
-
-   /* If we generated an expression instruction into a temporary in
-    * processing the saturate's operand, apply the saturate to that
-    * instruction.  Otherwise, generate a MOV to do the saturate.
-    *
-    * Note that we have to be careful to only do this optimization if
-    * the instruction in question was what generated src->result.  For
-    * example, ir_dereference_array might generate a MUL instruction
-    * to create the reladdr, and return us a src reg using that
-    * reladdr.  That MUL result is not the value we're trying to
-    * saturate.
-    */
-   ir_expression *sat_src_expr = sat_src->as_expression();
-   if (sat_src_expr && (sat_src_expr->operation == ir_binop_mul ||
-			sat_src_expr->operation == ir_binop_add ||
-			sat_src_expr->operation == ir_binop_dot)) {
-      glsl_to_tgsi_instruction *new_inst;
-      new_inst = (glsl_to_tgsi_instruction *)this->instructions.get_tail();
-      new_inst->saturate = true;
-   } else {
-      this->result = get_temp(ir->type);
-      st_dst_reg result_dst = st_dst_reg(this->result);
-      result_dst.writemask = (1 << ir->type->vector_elements) - 1;
-      glsl_to_tgsi_instruction *inst;
-      inst = emit(ir, TGSI_OPCODE_MOV, result_dst, src);
-      inst->saturate = true;
-   }
-
-   return true;
-}
-
 void
 glsl_to_tgsi_visitor::reladdr_to_temp(ir_instruction *ir,
         			    st_src_reg *reg, int *num_reladdr)
@@ -1362,9 +1314,6 @@ glsl_to_tgsi_visitor::visit(ir_expression *ir)
       if (try_emit_mad_for_and_not(ir, 0))
 	 return;
    }
-
-   if (try_emit_sat(ir))
-      return;
 
    if (ir->operation == ir_quadop_vector)
       assert(!"ir_quadop_vector should have been lowered");
@@ -1460,6 +1409,12 @@ glsl_to_tgsi_visitor::visit(ir_expression *ir)
    case ir_unop_cos_reduced:
       emit_scs(ir, TGSI_OPCODE_COS, result_dst, op[0]);
       break;
+   case ir_unop_saturate: {
+      glsl_to_tgsi_instruction *inst;
+      inst = emit(ir, TGSI_OPCODE_MOV, result_dst, op[0]);
+      inst->saturate = true;
+      break;
+   }
 
    case ir_unop_dFdx:
    case ir_unop_dFdx_coarse:
@@ -5432,6 +5387,9 @@ st_link_shader(struct gl_context *ctx, struct gl_shader_program *prog)
       if (!pscreen->get_param(pscreen, PIPE_CAP_TEXTURE_GATHER_OFFSETS))
          lower_offset_arrays(ir);
       do_mat_op_to_vec(ir);
+      /* Emit saturates in the vertex shader only if SM 3.0 is supported. */
+      bool vs_sm3 = (_mesa_shader_stage_to_program(prog->_LinkedShaders[i]->Stage) ==
+                         GL_VERTEX_PROGRAM_ARB) && st_context(ctx)->has_shader_model3;
       lower_instructions(ir,
                          MOD_TO_FRACT |
                          DIV_TO_MUL_RCP |
@@ -5441,7 +5399,8 @@ st_link_shader(struct gl_context *ctx, struct gl_shader_program *prog)
                          CARRY_TO_ARITH |
                          BORROW_TO_ARITH |
                          (options->EmitNoPow ? POW_TO_EXP2 : 0) |
-                         (!ctx->Const.NativeIntegers ? INT_DIV_TO_MUL_RCP : 0));
+                         (!ctx->Const.NativeIntegers ? INT_DIV_TO_MUL_RCP : 0) |
+                         (vs_sm3 ? SAT_TO_CLAMP : 0));
 
       lower_ubo_reference(prog->_LinkedShaders[i], ir);
       do_vec_index_to_cond_assign(ir);

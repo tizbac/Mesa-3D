@@ -60,7 +60,7 @@ fs_visitor::visit(ir_variable *ir)
       if (!strcmp(ir->name, "gl_FragCoord")) {
 	 reg = emit_fragcoord_interpolation(ir);
       } else if (!strcmp(ir->name, "gl_FrontFacing")) {
-	 reg = emit_frontfacing_interpolation(ir);
+	 reg = emit_frontfacing_interpolation();
       } else {
 	 reg = emit_general_interpolation(ir);
       }
@@ -134,7 +134,7 @@ fs_visitor::visit(ir_variable *ir)
 
    } else if (ir->data.mode == ir_var_system_value) {
       if (ir->data.location == SYSTEM_VALUE_SAMPLE_POS) {
-	 reg = emit_samplepos_setup(ir);
+	 reg = emit_samplepos_setup();
       } else if (ir->data.location == SYSTEM_VALUE_SAMPLE_ID) {
 	 reg = emit_sampleid_setup(ir);
       } else if (ir->data.location == SYSTEM_VALUE_SAMPLE_MASK_IN) {
@@ -267,16 +267,13 @@ fs_visitor::emit_minmax(enum brw_conditional_mod conditionalmod, const fs_reg &d
    }
 }
 
-/* Instruction selection: Produce a MOV.sat instead of
- * MIN(MAX(val, 0), 1) when possible.
- */
 bool
 fs_visitor::try_emit_saturate(ir_expression *ir)
 {
-   ir_rvalue *sat_val = ir->as_rvalue_to_saturate();
-
-   if (!sat_val)
+   if (ir->operation != ir_unop_saturate)
       return false;
+
+   ir_rvalue *sat_val = ir->operands[0];
 
    fs_inst *pre_inst = (fs_inst *) this->instructions.get_tail();
 
@@ -285,21 +282,17 @@ fs_visitor::try_emit_saturate(ir_expression *ir)
 
    fs_inst *last_inst = (fs_inst *) this->instructions.get_tail();
 
-   /* If the last instruction from our accept() didn't generate our
-    * src, generate a saturated MOV
+   /* If the last instruction from our accept() generated our
+    * src, just set the saturate flag instead of emmitting a separate mov.
     */
    fs_inst *modify = get_instruction_generating_reg(pre_inst, last_inst, src);
-   if (!modify || modify->regs_written != 1) {
-      this->result = fs_reg(this, ir->type);
-      fs_inst *inst = emit(MOV(this->result, src));
-      inst->saturate = true;
-   } else {
+   if (modify && modify->regs_written == 1 && modify->can_do_saturate()) {
       modify->saturate = true;
       this->result = src;
+      return true;
    }
 
-
-   return true;
+   return false;
 }
 
 bool
@@ -864,6 +857,10 @@ fs_visitor::visit(ir_expression *ir)
    case ir_unop_find_lsb:
       emit(FBL(this->result, op[0]));
       break;
+   case ir_unop_saturate:
+      inst = emit(MOV(this->result, op[0]));
+      inst->saturate = true;
+      break;
    case ir_triop_bitfield_extract:
       /* Note that the instruction's argument order is reversed from GLSL
        * and the IR.
@@ -1152,7 +1149,7 @@ fs_visitor::emit_texture_gen4(ir_texture *ir, fs_reg dst, fs_reg coordinate,
    /* g0 header. */
    mlen = 1;
 
-   if (ir->shadow_comparitor) {
+   if (shadow_c.file != BAD_FILE) {
       for (int i = 0; i < ir->coordinate->type->vector_elements; i++) {
 	 emit(MOV(fs_reg(MRF, base_mrf + mlen + i), coordinate));
 	 coordinate.reg_offset++;
@@ -1340,7 +1337,7 @@ fs_visitor::emit_texture_gen5(ir_texture *ir, fs_reg dst, fs_reg coordinate,
    }
    mlen += vector_elements * reg_width;
 
-   if (ir->shadow_comparitor) {
+   if (shadow_c.file != BAD_FILE) {
       mlen = MAX2(mlen, header_present + 4 * reg_width);
 
       emit(MOV(fs_reg(MRF, base_mrf + mlen), shadow_c));
@@ -1484,7 +1481,7 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
       length++;
    }
 
-   if (ir->shadow_comparitor) {
+   if (shadow_c.file != BAD_FILE) {
       emit(MOV(sources[length], shadow_c));
       length++;
    }
@@ -1579,7 +1576,7 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
       break;
    case ir_tg4:
       if (has_nonconstant_offset) {
-         if (ir->shadow_comparitor)
+         if (shadow_c.file != BAD_FILE)
             no16("Gen7 does not support gather4_po_c in SIMD16 mode.");
 
          /* More crazy intermixing */

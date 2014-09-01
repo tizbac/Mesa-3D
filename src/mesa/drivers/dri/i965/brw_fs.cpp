@@ -1185,9 +1185,9 @@ fs_visitor::emit_general_interpolation(ir_variable *ir)
 }
 
 fs_reg *
-fs_visitor::emit_frontfacing_interpolation(ir_variable *ir)
+fs_visitor::emit_frontfacing_interpolation()
 {
-   fs_reg *reg = new(this->mem_ctx) fs_reg(this, ir->type);
+   fs_reg *reg = new(this->mem_ctx) fs_reg(this, glsl_type::bool_type);
 
    if (brw->gen >= 6) {
       /* Bit 15 of g0.0 is 0 if the polygon is front facing. We want to create
@@ -1217,7 +1217,7 @@ fs_visitor::emit_frontfacing_interpolation(ir_variable *ir)
        * Instead, use ASR (which will give ~0/true or 0/false) followed by an
        * AND 1.
        */
-      fs_reg asr = fs_reg(this, ir->type);
+      fs_reg asr = fs_reg(this, glsl_type::bool_type);
       fs_reg g1_6 = fs_reg(retype(brw_vec1_grf(1, 6), BRW_REGISTER_TYPE_D));
       g1_6.negate = true;
 
@@ -1250,13 +1250,12 @@ fs_visitor::compute_sample_position(fs_reg dst, fs_reg int_sample_pos)
 }
 
 fs_reg *
-fs_visitor::emit_samplepos_setup(ir_variable *ir)
+fs_visitor::emit_samplepos_setup()
 {
    assert(brw->gen >= 6);
-   assert(ir->type == glsl_type::vec2_type);
 
    this->current_annotation = "compute sample position";
-   fs_reg *reg = new(this->mem_ctx) fs_reg(this, ir->type);
+   fs_reg *reg = new(this->mem_ctx) fs_reg(this, glsl_type::vec2_type);
    fs_reg pos = *reg;
    fs_reg int_sample_x = fs_reg(this, glsl_type::int_type);
    fs_reg int_sample_y = fs_reg(this, glsl_type::int_type);
@@ -3411,7 +3410,8 @@ brw_wm_fs_emit(struct brw_context *brw,
 
    cfg_t *simd16_cfg = NULL;
    fs_visitor v2(brw, mem_ctx, key, prog_data, prog, fp, 16);
-   if (brw->gen >= 5 && likely(!(INTEL_DEBUG & DEBUG_NO16))) {
+   if (brw->gen >= 5 && likely(!(INTEL_DEBUG & DEBUG_NO16) ||
+                               brw->use_rep_send)) {
       if (!v.simd16_unsupported) {
          /* Try a SIMD16 compile */
          v2.import_uniforms(&v);
