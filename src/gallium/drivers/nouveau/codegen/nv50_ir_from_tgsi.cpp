@@ -866,12 +866,15 @@ void Source::scanProperty(const struct tgsi_full_property *prop)
       break;
    case TGSI_PROPERTY_FS_COORD_ORIGIN:
       if (prop->u[0].Data == TGSI_FS_COORD_ORIGIN_UPPER_LEFT)
-         info->prop.fp.fragCoordMode = (1 << 1);
+         info->prop.fp.fragCoordMode |=  (1 << 1);
+      else if (prop->u[0].Data != TGSI_FS_COORD_ORIGIN_LOWER_LEFT )
+         info->prop.fp.fragCoordMode &= ~(1 << 1);
       break;
    case TGSI_PROPERTY_FS_COORD_PIXEL_CENTER:
       if (prop->u[0].Data == TGSI_FS_COORD_PIXEL_CENTER_INTEGER)
-         info->prop.fp.fragCoordMode =  (1 << 0);
-
+         info->prop.fp.fragCoordMode |=  (1 << 0);
+      else
+         info->prop.fp.fragCoordMode &= ~(1 << 0);
       break;
    case TGSI_PROPERTY_VS_PROHIBIT_UCPS:
       info->io.genUserClip = -1;
