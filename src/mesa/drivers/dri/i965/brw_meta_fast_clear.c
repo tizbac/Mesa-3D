@@ -282,6 +282,7 @@ get_fast_clear_rect(struct brw_context *brw, struct gl_framebuffer *fb,
        * factor is 2 vertically and either 2 or 8 horizontally.
        */
       switch (irb->mt->num_samples) {
+      case 2:
       case 4:
          x_scaledown = 8;
          break;
@@ -289,8 +290,7 @@ get_fast_clear_rect(struct brw_context *brw, struct gl_framebuffer *fb,
          x_scaledown = 2;
          break;
       default:
-         assert(!"Unexpected sample count for fast clear");
-         break;
+         unreachable("Unexpected sample count for fast clear");
       }
       y_scaledown = 2;
       x_align = x_scaledown * 2;

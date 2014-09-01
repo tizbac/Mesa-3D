@@ -69,23 +69,6 @@ hgl_viewport(struct gl_context* glContext)
 }
 
 
-static int
-hook_stm_get_param(struct st_manager *smapi, enum st_manager_param param)
-{
-	CALLED();
-
-	switch (param) {
-		case ST_MANAGER_BROKEN_INVALIDATE:
-			TRACE("%s: TODO: How should we handle BROKEN_INVALIDATE calls?\n",
-				__func__);
-			// For now we force validation of the framebuffer.
-			return 1;
-	}
-
-	return 0;
-}
-
-
 GalliumContext::GalliumContext(ulong options)
 	:
 	fOptions(options),
@@ -117,95 +100,6 @@ GalliumContext::~GalliumContext()
 	pipe_mutex_destroy(fMutex);
 
 	// TODO: Destroy fScreen
-}
-
-
-struct st_visual*
-GalliumContext::CreateVisual()
-{
-	struct st_visual* visual = CALLOC_STRUCT(st_visual);
-	if (!visual) {
-		ERROR("%s: Couldn't allocate st_visual\n", __func__);
-		return NULL;
-	}
-
-	// Calculate visual configuration
-	const GLboolean rgbFlag		= ((fOptions & BGL_INDEX) == 0);
-	const GLboolean alphaFlag	= ((fOptions & BGL_ALPHA) == BGL_ALPHA);
-	const GLboolean dblFlag		= ((fOptions & BGL_DOUBLE) == BGL_DOUBLE);
-	const GLboolean stereoFlag	= false;
-	const GLint depth			= (fOptions & BGL_DEPTH) ? 24 : 0;
-	const GLint stencil			= (fOptions & BGL_STENCIL) ? 8 : 0;
-	const GLint accum			= (fOptions & BGL_ACCUM) ? 16 : 0;
-	const GLint red				= rgbFlag ? 8 : 5;
-	const GLint green			= rgbFlag ? 8 : 5;
-	const GLint blue			= rgbFlag ? 8 : 5;
-	const GLint alpha			= alphaFlag ? 8 : 0;
-
-	TRACE("rgb      :\t%d\n", (bool)rgbFlag);
-	TRACE("alpha    :\t%d\n", (bool)alphaFlag);
-	TRACE("dbl      :\t%d\n", (bool)dblFlag);
-	TRACE("stereo   :\t%d\n", (bool)stereoFlag);
-	TRACE("depth    :\t%d\n", depth);
-	TRACE("stencil  :\t%d\n", stencil);
-	TRACE("accum    :\t%d\n", accum);
-	TRACE("red      :\t%d\n", red);
-	TRACE("green    :\t%d\n", green);
-	TRACE("blue     :\t%d\n", blue);
-	TRACE("alpha    :\t%d\n", alpha);
-
-	// Determine color format
-	if (red == 8) {
-		if (alpha == 8)
-			visual->color_format = PIPE_FORMAT_A8R8G8B8_UNORM;
-		else
-			visual->color_format = PIPE_FORMAT_X8R8G8B8_UNORM;
-	} else {
-		// TODO: I think this should be RGB vs BGR
-		visual->color_format = PIPE_FORMAT_B5G6R5_UNORM;
-	}
-
-	// Determine depth stencil format
-	switch (depth) {
-		default:
-		case 0:
-			visual->depth_stencil_format = PIPE_FORMAT_NONE;
-			break;
-		case 16:
-			visual->depth_stencil_format = PIPE_FORMAT_Z16_UNORM;
-			break;
-		case 24:
-			if ((fOptions & BGL_STENCIL) != 0)
-				visual->depth_stencil_format = PIPE_FORMAT_S8_UINT_Z24_UNORM;
-			else
-				visual->depth_stencil_format = PIPE_FORMAT_X8Z24_UNORM;
-			break;
-		case 32:
-			visual->depth_stencil_format = PIPE_FORMAT_Z32_UNORM;
-			break;
-	}
-
-	visual->accum_format = (fOptions & BGL_ACCUM)
-		? PIPE_FORMAT_R16G16B16A16_SNORM : PIPE_FORMAT_NONE;
-
-	visual->buffer_mask |= ST_ATTACHMENT_FRONT_LEFT_MASK;
-	visual->render_buffer = ST_ATTACHMENT_FRONT_LEFT;
-
-	if (dblFlag) {
-		visual->buffer_mask |= ST_ATTACHMENT_BACK_LEFT_MASK;
-		visual->render_buffer = ST_ATTACHMENT_BACK_LEFT;
-	}
-
-	if (stereoFlag) {
-		visual->buffer_mask |= ST_ATTACHMENT_FRONT_RIGHT_MASK;
-		if (dblFlag)
-			visual->buffer_mask |= ST_ATTACHMENT_BACK_RIGHT_MASK;
-	}
-
-	if ((fOptions & BGL_DEPTH) || (fOptions & BGL_STENCIL)) 
-		visual->buffer_mask |= ST_ATTACHMENT_DEPTH_STENCIL_MASK;
-
-	return visual;
 }
 
 
@@ -264,20 +158,13 @@ GalliumContext::CreateContext(Bitmap *bitmap)
 		return -1;
 	}
 
-	context->manager = CALLOC_STRUCT(st_manager);
-	if (!context->manager) {
-		ERROR("%s: Couldn't allocate Mesa state tracker manager!\n", __func__);
-		return -1;
-	}
-	context->manager->get_param = hook_stm_get_param;
+	// Create state_tracker manager
+	context->manager = hgl_create_st_manager(fScreen);
 
 	// Create state tracker visual
-	context->stVisual = CreateVisual();
-	if (context->stVisual == NULL) {
-		ERROR("%s: Couldn't create state_tracker visual!\n", __func__);
-		return -1;
-	}
+	context->stVisual = hgl_create_st_visual(fOptions);
 
+	// Create state tracker framebuffers
 	context->draw = hgl_create_st_framebuffer(context);
 	context->read = hgl_create_st_framebuffer(context);
 
@@ -286,9 +173,6 @@ GalliumContext::CreateContext(Bitmap *bitmap)
 		FREE(context->stVisual);
 		return -1;
 	}
-
-	// We need to assign the screen *before* calling st_api create_context
-	context->manager->screen = fScreen;
 
 	// Build state tracker attributes
 	struct st_context_attribs attribs;
@@ -334,7 +218,7 @@ GalliumContext::CreateContext(Bitmap *bitmap)
 				break;
 		}
 
-		FREE(context->stVisual);
+		hgl_destroy_st_visual(context->stVisual);
 		FREE(context);
 		return -1;
 	}
@@ -395,17 +279,17 @@ GalliumContext::DestroyContext(context_id contextID)
 	if (fContext[contextID]->postProcess)
 		pp_free(fContext[contextID]->postProcess);
 
-	// Delete framebuffer objects
+	// Delete state tracker framebuffer objects
 	if (fContext[contextID]->read)
 		delete fContext[contextID]->read;
 	if (fContext[contextID]->draw)
 		delete fContext[contextID]->draw;
 
 	if (fContext[contextID]->stVisual)
-		FREE(fContext[contextID]->stVisual);
+		hgl_destroy_st_visual(fContext[contextID]->stVisual);
 
 	if (fContext[contextID]->manager)
-		FREE(fContext[contextID]->manager);
+		hgl_destroy_st_manager(fContext[contextID]->manager);
 
 	FREE(fContext[contextID]);
 }
@@ -523,7 +407,7 @@ GalliumContext::ResizeViewport(int32 width, int32 height)
 		if (fContext[i] && fContext[i]->st) {
 			struct st_context *stContext = (struct st_context*)fContext[i]->st;
 			_mesa_set_viewport(stContext->ctx, 0, 0, 0, width, height);
-        		st_manager_validate_framebuffers(stContext);
+			st_manager_validate_framebuffers(stContext);
 		}
 	}
 }
