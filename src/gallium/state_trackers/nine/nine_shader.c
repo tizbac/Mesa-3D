@@ -827,7 +827,7 @@ tx_src_param(struct shader_translator *tx, const struct sm1_src_param *param)
         break;
     case D3DSPR_SAMPLER:
         assert(param->mod == NINED3DSPSM_NONE);
-        assert(param->swizzle == NINED3DSP_NOSWIZZLE);
+        assert(tx->version.major >= 3 || param->swizzle == NINED3DSP_NOSWIZZLE);
         assert(!param->rel);
         src = ureg_src_register(TGSI_FILE_SAMPLER, param->idx);
         break;
@@ -2537,13 +2537,30 @@ DECL_SPECIAL(TEXLD)
 {
     struct ureg_program *ureg = tx->ureg;
     unsigned target;
-    struct ureg_dst dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    struct ureg_dst dst;
+    struct ureg_dst real_dst;
+    struct ureg_src dst_swizzled;
     struct ureg_src src[2] = {
         tx_src_param(tx, &tx->insn.src[0]),
         tx_src_param(tx, &tx->insn.src[1])
     };
     assert(tx->insn.src[1].idx >= 0 &&
            tx->insn.src[1].idx < Elements(tx->sampler_targets));
+
+    /* If the sampler (src1) is swizzled , it's swizzle has to be applied to the result of TEXLD
+     * before actually writing dst */
+    if (tx->insn.src[1].swizzle != NINED3DSP_NOSWIZZLE) {
+        dst = tx_scratch(tx);
+        dst_swizzled = ureg_swizzle(ureg_src(dst),
+                                    (tx->insn.src[1].swizzle >> 0) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 2) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 4) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 6) & 0x3);
+        real_dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    } else {
+        dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    }
+    
     target = tx->sampler_targets[tx->insn.src[1].idx];
 
     switch (tx->insn.flags) {
@@ -2559,6 +2576,9 @@ DECL_SPECIAL(TEXLD)
     default:
         assert(0);
         return D3DERR_INVALIDCALL;
+    }
+    if (tx->insn.src[1].swizzle != NINED3DSP_NOSWIZZLE) {
+        ureg_MOV(ureg,real_dst,dst_swizzled);
     }
     return D3D_OK;
 }
@@ -2599,7 +2619,9 @@ DECL_SPECIAL(TEX)
 DECL_SPECIAL(TEXLDD)
 {
     unsigned target;
-    struct ureg_dst dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    struct ureg_dst dst;
+    struct ureg_dst real_dst;
+    struct ureg_src dst_swizzled;
     struct ureg_src src[4] = {
         tx_src_param(tx, &tx->insn.src[0]),
         tx_src_param(tx, &tx->insn.src[1]),
@@ -2608,25 +2630,67 @@ DECL_SPECIAL(TEXLDD)
     };
     assert(tx->insn.src[3].idx >= 0 &&
            tx->insn.src[3].idx < Elements(tx->sampler_targets));
+
+    /* If the sampler (src1) is swizzled , it's swizzle has to be applied to the result of TEXLD
+     * before actually writing dst */
+    if (tx->insn.src[1].swizzle != NINED3DSP_NOSWIZZLE) {
+        dst = tx_scratch(tx);
+        dst_swizzled = ureg_swizzle(ureg_src(dst),
+                                    (tx->insn.src[1].swizzle >> 0) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 2) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 4) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 6) & 0x3);
+        real_dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    } else {
+        dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    }
+
     target = tx->sampler_targets[tx->insn.src[1].idx];
 
     ureg_TXD(tx->ureg, dst, target, src[0], src[2], src[3], src[1]);
+
+    if (tx->insn.src[1].swizzle != NINED3DSP_NOSWIZZLE) {
+        ureg_MOV(tx->ureg, real_dst, dst_swizzled);
+    }
+
     return D3D_OK;
 }
 
 DECL_SPECIAL(TEXLDL)
 {
     unsigned target;
-    struct ureg_dst dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    struct ureg_dst dst;
+    struct ureg_dst real_dst;
+    struct ureg_src dst_swizzled;
     struct ureg_src src[2] = {
        tx_src_param(tx, &tx->insn.src[0]),
        tx_src_param(tx, &tx->insn.src[1])
     };
     assert(tx->insn.src[3].idx >= 0 &&
            tx->insn.src[3].idx < Elements(tx->sampler_targets));
+    
+    /* If the sampler (src1) is swizzled , it's swizzle has to be applied to the result of TEXLD
+     * before actually writing dst */
+    if (tx->insn.src[1].swizzle != NINED3DSP_NOSWIZZLE) {
+        dst = tx_scratch(tx);
+        dst_swizzled = ureg_swizzle(ureg_src(dst),
+                                    (tx->insn.src[1].swizzle >> 0) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 2) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 4) & 0x3,
+                                    (tx->insn.src[1].swizzle >> 6) & 0x3);
+        real_dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    } else {
+        dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    }
+
     target = tx->sampler_targets[tx->insn.src[1].idx];
 
     ureg_TXL(tx->ureg, dst, target, src[0], src[1]);
+
+    if (tx->insn.src[1].swizzle != NINED3DSP_NOSWIZZLE) {
+        ureg_MOV(tx->ureg, real_dst, dst_swizzled);
+    }
+
     return D3D_OK;
 }
 
