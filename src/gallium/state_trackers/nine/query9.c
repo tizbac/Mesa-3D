@@ -216,8 +216,10 @@ NineQuery9_GetData( struct NineQuery9 *This,
      * on windows */
     user_assert(This->state != NINE_QUERY_STATE_RUNNING, S_FALSE);
     user_assert(dwSize == 0 || pData, D3DERR_INVALIDCALL);
-    user_assert(dwGetDataFlags == 0 ||
-                dwGetDataFlags == D3DGETDATA_FLUSH, D3DERR_INVALIDCALL);
+
+    if (dwGetDataFlags & ~(D3DGETDATA_FLUSH)) {
+        WARN_ONCE("Unknown 0x%08x flags in NineQuery9_GetData(type=%d)\n", dwGetDataFlags & ~(D3DGETDATA_FLUSH), This->type);
+    }
 
     if (This->state == NINE_QUERY_STATE_FRESH) {
         /* App forgot calling Issue. call it for it.
