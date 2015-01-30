@@ -466,6 +466,8 @@ struct shader_translator
         struct ureg_src vFace;
         struct ureg_src s;
         struct ureg_dst p;
+        struct ureg_dst p_orig_dest;
+        struct ureg_dst p_temp_dest;
         struct ureg_dst address;
         struct ureg_dst a0;
         struct ureg_dst tS[8]; /* texture stage registers */
@@ -1119,6 +1121,13 @@ _tx_dst_param(struct shader_translator *tx, const struct sm1_dst_param *param)
         dst = ureg_writemask(dst, param->mask);
     if (param->mod & NINED3DSPDM_SATURATE)
         dst = ureg_saturate(dst);
+
+    if (tx->insn.predicated) {
+        assert(dst.File != TGSI_FILE_OUTPUT); /* Not implemented for now */
+        tx->regs.p_orig_dest = dst;
+        tx->regs.p_temp_dest = tx_scratch(tx);
+        return tx->regs.p_temp_dest; /* Return a temporary register to write into */
+    }
 
     return dst;
 }
@@ -2696,7 +2705,16 @@ DECL_SPECIAL(TEXLDL)
 
 DECL_SPECIAL(SETP)
 {
-    STUB(D3DERR_INVALIDCALL);
+    struct ureg_dst dst = tx_dst_param(tx, &tx->insn.dst[0]);
+    struct ureg_src src[2];
+    struct ureg_dst tmp = tx_scratch(tx);
+    const unsigned cmp_op = sm1_insn_flags_to_tgsi_setop(tx->insn.flags);
+    src[0] = tx_src_param(tx, &tx->insn.src[0]);
+    src[1] = tx_src_param(tx, &tx->insn.src[1]);
+    ureg_insn(tx->ureg, cmp_op, &tmp, 1, src, 2);
+    ureg_SUB(tx->ureg, dst, ureg_src(tmp), ureg_imm4f(tx->ureg, 0.5f, 0.5f, 0.5f, 0.5f));
+    /* regs.p now if the condition is met is 1.0 else it's 0 */
+    return D3D_OK;
 }
 
 DECL_SPECIAL(BREAKP)
@@ -3128,8 +3146,6 @@ sm1_parse_instruction(struct shader_translator *tx)
     insn->ndst = info->ndst;
     insn->nsrc = info->nsrc;
 
-    assert(!insn->predicated && "TODO: predicated instructions");
-
     /* check version */
     {
         unsigned min = IS_VS ? info->vert_version.min : info->frag_version.min;
@@ -3163,6 +3179,13 @@ sm1_parse_instruction(struct shader_translator *tx)
     else
        NineTranslateInstruction_Generic(tx);
     tx_apply_dst0_modifiers(tx);
+
+    /*Add the CMP needed for predicate*/
+    /* TODO: Predicate swizzle */
+    /* TODO: Negated predicate */
+    if (tx->insn.predicated) {
+        ureg_CMP(tx->ureg, tx->regs.p_orig_dest, ureg_src(tx->regs.p), ureg_src(tx->regs.p_orig_dest), ureg_src(tx->regs.p_temp_dest));
+    }
 
     tx->num_scratch = 0; /* reset */
 
